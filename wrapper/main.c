@@ -47,18 +47,18 @@ void curl_easy_setopt_hook(void *curl, int32_t option, ...) {
     va_list args;
     va_start(args, option);
     void* param = va_arg(args, void*);
-    
+
     subhook_remove(curl_hook);
- 
-    if (option == CURLOPT_SSL_VERIFYPEER || 
-        option == CURLOPT_SSL_VERIFYHOST || 
+
+    if (option == CURLOPT_SSL_VERIFYPEER ||
+        option == CURLOPT_SSL_VERIFYHOST ||
         option == CURLOPT_PINNEDPUBLICKEY) {
         curl_easy_setopt(curl, option, 0L);
         printf("[+] hooked curl_easy_setopt %d\n", option);
     } else {
         curl_easy_setopt(curl, option, param);
     }
- 
+
     va_end(args);
     subhook_install(curl_hook);
 }
@@ -109,7 +109,7 @@ void DumpHex(const void* data, size_t size) {
 #endif
 
 int file_exists(char *filename) {
-  struct stat buffer;   
+  struct stat buffer;
   return (stat (filename, &buffer) == 0);
 }
 
@@ -118,7 +118,7 @@ char *strcat_b(char *dest, char* src) {
     size_t len2 = strlen(src);
 
     char *result = malloc(len1 + len2 + 1);
-    if (!result) return NULL; 
+    if (!result) return NULL;
 
     strcpy(result, dest);
     strcat(result, src);
@@ -126,14 +126,14 @@ char *strcat_b(char *dest, char* src) {
     return result;
 }
 
-int split_string_safe(const char *str, const char *delim, char **components, 
-                      int max_components, char **out_copy_to_free) 
+int split_string_safe(const char *str, const char *delim, char **components,
+                      int max_components, char **out_copy_to_free)
 {
     *out_copy_to_free = NULL;
 
     char *copy = strdup(str);
     if (copy == NULL) {
-        return -1; 
+        return -1;
     }
 
     *out_copy_to_free = copy;
@@ -623,7 +623,7 @@ const char* get_m3u8_method_download(struct shared_ptr reqCtx, unsigned long ada
             free(url_str);
             return result;
         }
-    } 
+    }
     return NULL;
 }
 
@@ -636,7 +636,7 @@ const char* get_m3u8_method_play(uint8_t leaseMgr[16], unsigned long adam) {
     _ZN22SVPlaybackLeaseManager12requestAssetERKmRKNSt6__ndk16vectorINS2_12basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEENS7_IS9_EEEERKb(
         &ptr_result, leaseMgr, &adam, &HLSParam, &z0
     );
-    
+
     if (ptr_result.obj == NULL) {
         return NULL;
     }
@@ -659,7 +659,7 @@ const char* get_m3u8_method_play(uint8_t leaseMgr[16], unsigned long adam) {
             free(m3u8);
             return NULL;
         }
-        
+
         const char *m3u8_str = std_string_data(m3u8);
         if (m3u8_str) {
             char *result = strdup(m3u8_str);  // Make a copy
@@ -746,7 +746,7 @@ static inline void *new_socket_m3u8(void *args) {
                 errno == ENETUNREACH)
                 continue;
             perror("accept4");
-            
+
         }
 
         handle_m3u8(connfd);
@@ -871,10 +871,10 @@ char* get_account_storefront_id(struct shared_ptr reqCtx) {
     _ZNK17storeservicescore14RequestContext20storeFrontIdentifierERKNSt6__ndk110shared_ptrINS_6URLBagEEE(region, reqCtx.obj, &urlbag);
     const char *region_str = std_string_data(region);
     if (region_str) {
-        char *result = strdup(region_str); 
+        char *result = strdup(region_str);
         free(region);
         return result;
-    } 
+    }
     return NULL;
 }
 
@@ -1021,7 +1021,7 @@ int offline_available() {
     int state = *(int*)((char*)second_item_ptr + 8);
     if (state == 2 || state == 3) { // kFPSubscriptionCanPlayContent, kFPSubscriptionCanStreamAndPlayContent
         return 1;
-    } 
+    }
     return 0;
 }
 
