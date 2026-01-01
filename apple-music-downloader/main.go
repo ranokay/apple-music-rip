@@ -1686,41 +1686,16 @@ func ripPlaylist(playlistId string, token string, storefront string, mediaUserTo
 	playlist.SaveName = playlistFolder
 	fmt.Println(playlistFolder)
 
-	// Handle covers-only mode at playlist level
-	if dl_covers {
-		fmt.Println("Downloading playlist cover only...")
-		if meta.Data[0].Attributes.Artwork.URL != "" {
-			covPath, err := writeCover(playlistFolderPath, "cover", meta.Data[0].Attributes.Artwork.URL)
-			if err != nil {
-				fmt.Printf("Failed to write playlist cover: %v\n", err)
-			} else {
-				fmt.Printf("✅ Playlist cover saved: %s\n", covPath)
-			}
-		} else {
-			fmt.Println("No artwork URL found for playlist")
-		}
-
-		// Also download artist cover if enabled (for playlists, skip as structure is complex)
-		if Config.SaveArtistCover {
-			fmt.Println("Artist cover download not available for playlists")
-		}
-
-		// Skip individual track processing for covers-only mode
-		return nil
-	}
-
-	covPath, err := writeCover(playlistFolderPath, "cover", meta.Data[0].Attributes.Artwork.URL)
-	if err != nil {
-		fmt.Println("Failed to write cover.")
-	}
+	albumFolderCache := make(map[string]string)
+	albumCoverCache := make(map[string]string)
+	artistFolderCache := make(map[string]string)
 
 	for i := range playlist.Tracks {
-		playlist.Tracks[i].CoverPath = covPath
 		playlist.Tracks[i].SaveDir = playlistFolderPath
 		playlist.Tracks[i].Codec = Codec
 	}
 
-	if Config.SaveAnimatedArtwork && meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video != "" {
+	if Config.SaveAnimatedArtwork && meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video != "" && false {
 		fmt.Println("Found Animation Artwork.")
 
 		motionvideoUrlSquare, err := extractVideo(meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video)
@@ -1797,7 +1772,136 @@ func ripPlaylist(playlistId string, token string, storefront string, mediaUserTo
 			return nil
 		}
 		if isInArray(selected, i) {
-			ripTrack(&playlist.Tracks[i-1], token, mediaUserToken)
+			track := &playlist.Tracks[i-1]
+			_ = track.GetAlbumData(token)
+
+			artistName := track.Resp.Attributes.ArtistName
+			albumName := track.Resp.Attributes.AlbumName
+			albumId := ""
+			releaseDate := ""
+			upc := ""
+			recordLabel := ""
+			copyright := ""
+			if track.AlbumData.Attributes.Name != "" {
+				albumName = track.AlbumData.Attributes.Name
+			}
+			if track.AlbumData.Attributes.ArtistName != "" {
+				artistName = track.AlbumData.Attributes.ArtistName
+			}
+			if track.AlbumData.ID != "" {
+				albumId = track.AlbumData.ID
+			}
+			if track.AlbumData.Attributes.ReleaseDate != "" {
+				releaseDate = track.AlbumData.Attributes.ReleaseDate
+			}
+			if track.AlbumData.Attributes.Upc != "" {
+				upc = track.AlbumData.Attributes.Upc
+			}
+			if track.AlbumData.Attributes.RecordLabel != "" {
+				recordLabel = track.AlbumData.Attributes.RecordLabel
+			}
+			if track.AlbumData.Attributes.Copyright != "" {
+				copyright = track.AlbumData.Attributes.Copyright
+			}
+
+			artistId := ""
+			if len(track.Resp.Relationships.Artists.Data) > 0 {
+				artistId = track.Resp.Relationships.Artists.Data[0].ID
+			}
+			singerFoldername := strings.NewReplacer(
+				"{UrlArtistName}", LimitString(artistName),
+				"{ArtistName}", LimitString(artistName),
+				"{ArtistId}", artistId,
+			).Replace(Config.ArtistFolderFormat)
+			if strings.HasSuffix(singerFoldername, ".") {
+				singerFoldername = strings.ReplaceAll(singerFoldername, ".", "")
+			}
+			singerFoldername = strings.TrimSpace(singerFoldername)
+
+			artistFolderPath := artistFolderCache[singerFoldername]
+			if artistFolderPath == "" {
+				artistFolderPath = filepath.Join(playlistFolderPath, forbiddenNames.ReplaceAllString(singerFoldername, "_"))
+				os.MkdirAll(artistFolderPath, os.ModePerm)
+				artistFolderCache[singerFoldername] = artistFolderPath
+			}
+
+			releaseYear := ""
+			if len(releaseDate) >= 4 {
+				releaseYear = releaseDate[:4]
+			}
+
+			stringsToJoin := []string{}
+			if track.Resp.Attributes.IsAppleDigitalMaster {
+				if Config.AppleMasterChoice != "" {
+					stringsToJoin = append(stringsToJoin, Config.AppleMasterChoice)
+				}
+			}
+			if track.Resp.Attributes.ContentRating == "explicit" {
+				if Config.ExplicitChoice != "" {
+					stringsToJoin = append(stringsToJoin, Config.ExplicitChoice)
+				}
+			}
+			if track.Resp.Attributes.ContentRating == "clean" {
+				if Config.CleanChoice != "" {
+					stringsToJoin = append(stringsToJoin, Config.CleanChoice)
+				}
+			}
+			Tag_string := strings.Join(stringsToJoin, " ")
+
+			albumKey := albumId
+			if albumKey == "" {
+				albumKey = artistName + "|" + albumName
+			}
+
+			albumFolderPath := albumFolderCache[albumKey]
+			if albumFolderPath == "" {
+				albumFolderName := strings.NewReplacer(
+					"{ReleaseDate}", releaseDate,
+					"{ReleaseYear}", releaseYear,
+					"{ArtistName}", LimitString(artistName),
+					"{AlbumName}", LimitString(albumName),
+					"{UPC}", upc,
+					"{RecordLabel}", recordLabel,
+					"{Copyright}", copyright,
+					"{AlbumId}", albumId,
+					"{Quality}", Quality,
+					"{Codec}", Codec,
+					"{Tag}", Tag_string,
+				).Replace(Config.AlbumFolderFormat)
+				if strings.HasSuffix(albumFolderName, ".") {
+					albumFolderName = strings.ReplaceAll(albumFolderName, ".", "")
+				}
+				albumFolderName = strings.TrimSpace(albumFolderName)
+				albumFolderPath = filepath.Join(artistFolderPath, forbiddenNames.ReplaceAllString(albumFolderName, "_"))
+				os.MkdirAll(albumFolderPath, os.ModePerm)
+				albumFolderCache[albumKey] = albumFolderPath
+			}
+
+			track.SaveDir = albumFolderPath
+			track.Codec = Codec
+			if !dl_lyrics {
+				if albumCoverCache[albumKey] == "" {
+					covPath, err := writeCover(albumFolderPath, "cover", track.Resp.Attributes.Artwork.URL)
+					if err != nil {
+						fmt.Println("Failed to write cover.")
+					} else {
+						albumCoverCache[albumKey] = covPath
+					}
+				}
+				track.CoverPath = albumCoverCache[albumKey]
+			}
+
+			if dl_covers {
+				counter.Total++
+				if albumCoverCache[albumKey] != "" {
+					counter.Success++
+				} else {
+					counter.Error++
+				}
+				continue
+			}
+
+			ripTrack(track, token, mediaUserToken)
 		}
 	}
 	return nil
@@ -1833,6 +1937,12 @@ func writeMP4Tags(track *task.Track, lrc string) error {
 		}
 		t.ItunesAlbumID = int32(albumID)
 	}
+	if (track.PreType == "playlists" || track.PreType == "stations") && track.AlbumData.ID != "" {
+		albumID, err := strconv.ParseUint(track.AlbumData.ID, 10, 32)
+		if err == nil {
+			t.ItunesAlbumID = int32(albumID)
+		}
+	}
 
 	if len(track.Resp.Relationships.Artists.Data) > 0 {
 		artistID, err := strconv.ParseUint(track.Resp.Relationships.Artists.Data[0].ID, 10, 32)
@@ -1842,7 +1952,10 @@ func writeMP4Tags(track *task.Track, lrc string) error {
 		t.ItunesArtistID = int32(artistID)
 	}
 
-	if (track.PreType == "playlists" || track.PreType == "stations") && !Config.UseSongInfoForPlaylist {
+	useAlbumInfoForPlaylist := (track.PreType == "playlists" || track.PreType == "stations") &&
+		(Config.UseSongInfoForPlaylist || track.AlbumData.ID != "" || track.AlbumData.Attributes.Name != "")
+
+	if (track.PreType == "playlists" || track.PreType == "stations") && !useAlbumInfoForPlaylist {
 		t.DiscNumber = 1
 		t.DiscTotal = 1
 		t.TrackNumber = int16(track.TaskNum)
@@ -1851,25 +1964,32 @@ func writeMP4Tags(track *task.Track, lrc string) error {
 		t.AlbumSort = track.PlaylistData.Attributes.Name
 		t.AlbumArtist = track.PlaylistData.Attributes.ArtistName
 		t.AlbumArtistSort = track.PlaylistData.Attributes.ArtistName
-	} else if (track.PreType == "playlists" || track.PreType == "stations") && Config.UseSongInfoForPlaylist {
-		t.DiscTotal = int16(track.DiscTotal)
-		t.TrackTotal = int16(track.AlbumData.Attributes.TrackCount)
-		t.AlbumArtist = track.AlbumData.Attributes.ArtistName
-		t.AlbumArtistSort = track.AlbumData.Attributes.ArtistName
-		t.Custom["UPC"] = track.AlbumData.Attributes.Upc
-		t.Custom["LABEL"] = track.AlbumData.Attributes.RecordLabel
-		t.Date = track.AlbumData.Attributes.ReleaseDate
-		t.Copyright = track.AlbumData.Attributes.Copyright
-		t.Publisher = track.AlbumData.Attributes.RecordLabel
 	} else {
 		t.DiscTotal = int16(track.DiscTotal)
-		t.TrackTotal = int16(track.AlbumData.Attributes.TrackCount)
-		t.AlbumArtist = track.AlbumData.Attributes.ArtistName
-		t.AlbumArtistSort = track.AlbumData.Attributes.ArtistName
-		t.Custom["UPC"] = track.AlbumData.Attributes.Upc
-		t.Date = track.AlbumData.Attributes.ReleaseDate
-		t.Copyright = track.AlbumData.Attributes.Copyright
-		t.Publisher = track.AlbumData.Attributes.RecordLabel
+		if track.AlbumData.Attributes.TrackCount > 0 {
+			t.TrackTotal = int16(track.AlbumData.Attributes.TrackCount)
+		}
+		if track.AlbumData.Attributes.Name != "" {
+			t.Album = track.AlbumData.Attributes.Name
+			t.AlbumSort = track.AlbumData.Attributes.Name
+		}
+		if track.AlbumData.Attributes.ArtistName != "" {
+			t.AlbumArtist = track.AlbumData.Attributes.ArtistName
+			t.AlbumArtistSort = track.AlbumData.Attributes.ArtistName
+		}
+		if track.AlbumData.Attributes.Upc != "" {
+			t.Custom["UPC"] = track.AlbumData.Attributes.Upc
+		}
+		if track.AlbumData.Attributes.RecordLabel != "" {
+			t.Custom["LABEL"] = track.AlbumData.Attributes.RecordLabel
+			t.Publisher = track.AlbumData.Attributes.RecordLabel
+		}
+		if track.AlbumData.Attributes.ReleaseDate != "" {
+			t.Date = track.AlbumData.Attributes.ReleaseDate
+		}
+		if track.AlbumData.Attributes.Copyright != "" {
+			t.Copyright = track.AlbumData.Attributes.Copyright
+		}
 	}
 
 	if track.Resp.Attributes.ContentRating == "explicit" {
