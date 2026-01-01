@@ -12,7 +12,7 @@ clean-choice: '[C]'
 convert-after-download: true
 convert-extra-args: ''
 convert-format: flac
-convert-keep-original: true
+convert-keep-original: false
 convert-skip-if-source-matches: true
 cover-format: original
 cover-size: 5000x5000

@@ -48,6 +48,26 @@
             <div class="d-flex justify-content-center mb-3">
                 <div id="format-options" class="border rounded p-3"
                     style="background-color: #333; border-color: #555; max-width: 500px;">
+                    <h6 class="mb-2">Download Mode</h6>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="download-mode" id="mode-audio" value="audio"
+                            checked>
+                        <label class="form-check-label" for="mode-audio">Audio</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="download-mode" id="mode-lyrics" value="lyrics">
+                        <label class="form-check-label" for="mode-lyrics">Lyrics Only</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="download-mode" id="mode-covers" value="covers">
+                        <label class="form-check-label" for="mode-covers">Covers Only</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-center mb-3" id="audio-quality-options">
+                <div class="border rounded p-3"
+                    style="background-color: #333; border-color: #555; max-width: 500px;">
                     <h6 class="mb-2">Audio Quality</h6>
                     <div class="form-check form-check-inline">
                         <input class="form-check-input" type="radio" name="format" id="lossless" value="lossless"
@@ -73,7 +93,8 @@
             </div>
 
             <div class="mt-3">
-                <button id="download-btn" class="btn btn-primary btn-lg" {% if not wrapper_running %}disabled{% endif %}>Download</button>
+                <button id="download-btn" class="btn btn-primary btn-lg me-2" {% if not wrapper_running %}disabled{% endif %}>Download</button>
+                <button id="stop-btn" class="btn btn-danger btn-lg" style="display: none;">Stop</button>
             </div>
         </div>
 
@@ -112,6 +133,7 @@
 
     <script>
         const downloadBtn = document.getElementById("download-btn");
+        const stopBtn = document.getElementById("stop-btn");
         let downloadRunning = false;
 
         function colorWrapper(line) {
@@ -143,9 +165,20 @@
             }
         }
 
+        function toggleAudioQualityOptions(show) {
+            const audioOptions = document.getElementById("audio-quality-options");
+            audioOptions.style.display = show ? "flex" : "none";
+        }
+
+        function updateDownloadButtons(running) {
+            downloadBtn.style.display = running ? "none" : "inline-block";
+            stopBtn.style.display = running ? "inline-block" : "none";
+        }
+
         document.getElementById("download-btn").addEventListener("click", () => {
             const link = document.getElementById("link-box").value;
             const format = document.querySelector("input[name='format']:checked")?.value || "lossless";
+            const mode = document.querySelector("input[name='download-mode']:checked")?.value || "audio";
 
             if (!link.trim()) {
                 const logs = document.getElementById("downloader-logs");
@@ -154,7 +187,7 @@
                 return;
             }
 
-            const formData = new URLSearchParams({ link, format });
+            const formData = new URLSearchParams({ link, format, mode });
             downloadBtn.disabled = true;
             downloadBtn.textContent = "Starting...";
 
@@ -164,7 +197,7 @@
                     if (res.data.status === "ok") {
                         logs.innerHTML += `<div style="color: #28a745;"> ✅ ${res.data.msg}</div>`;
                         downloadRunning = true;
-                        downloadBtn.textContent = "Downloading...";
+                        updateDownloadButtons(true);
                     } else {
                         logs.innerHTML += `<div style="color: #dc3545;"> ❌ ${res.data.msg}</div>`;
                         downloadBtn.textContent = "Download";
@@ -178,6 +211,24 @@
                     logs.scrollTop = logs.scrollHeight;
                     downloadBtn.textContent = "Download";
                     downloadBtn.disabled = false;
+                });
+        });
+
+        document.getElementById("stop-btn").addEventListener("click", () => {
+            axios.post("/stop_download")
+                .then(res => {
+                    const logs = document.getElementById("downloader-logs");
+                    if (res.data.status === "ok") {
+                        logs.innerHTML += `<div style="color: #ffc107;"> 🛑 ${res.data.msg}</div>`;
+                    } else {
+                        logs.innerHTML += `<div style="color: #dc3545;"> ❌ ${res.data.msg}</div>`;
+                    }
+                    logs.scrollTop = logs.scrollHeight;
+                })
+                .catch(() => {
+                    const logs = document.getElementById("downloader-logs");
+                    logs.innerHTML += `<div style="color: #dc3545;"> ❌ Failed to stop download</div>`;
+                    logs.scrollTop = logs.scrollHeight;
                 });
         });
 
@@ -199,10 +250,11 @@
                 downloadRunning = res.data.download_running;
                 if (downloadRunning) {
                     downloadBtn.disabled = true;
-                    downloadBtn.textContent = "Downloading...";
+                    updateDownloadButtons(true);
                 } else {
                     downloadBtn.textContent = "Download";
                     downloadBtn.disabled = !res.data.wrapper_running;
+                    updateDownloadButtons(false);
                 }
 
                 updateWrapperStatus(res.data.wrapper_running);
@@ -237,6 +289,16 @@
                 warning.style.display = this.value === 'atmos' ? 'block' : 'none';
             });
         });
+
+        document.querySelectorAll('input[name="download-mode"]').forEach(radio => {
+            radio.addEventListener('change', function () {
+                const isAudioMode = this.value === 'audio';
+                toggleAudioQualityOptions(isAudioMode);
+            });
+        });
+
+        // Initialize audio quality options visibility
+        toggleAudioQualityOptions(true);
     </script>
 </body>
 

@@ -42,6 +42,8 @@ var (
 	dl_aac         bool
 	dl_select      bool
 	dl_song        bool
+	dl_lyrics      bool
+	dl_covers      bool
 	artist_select  bool
 	debug_mode     bool
 	alac_max       *int
@@ -67,6 +69,13 @@ func loadConfig() error {
 		Config.Storefront = "us"
 	}
 	return nil
+}
+
+func checkStopFile() bool {
+	if _, err := os.Stat("stop.signal"); err == nil {
+		return true
+	}
+	return false
 }
 
 func LimitString(s string) string {
@@ -758,8 +767,44 @@ func convertIfNeeded(track *task.Track) {
 
 func ripTrack(track *task.Track, token string, mediaUserToken string) {
 	var err error
+
+	// Check if we should stop processing
+	if checkStopFile() {
+		fmt.Println("\n🛑 Track processing stopped by user")
+		return
+	}
+
 	counter.Total++
 	fmt.Printf("Track %d of %d: %s\n", track.TaskNum, track.TaskTotal, track.Type)
+
+	// Handle lyrics-only mode
+	if dl_lyrics {
+		fmt.Printf("Downloading lyrics for: %s\n", track.Resp.Attributes.Name)
+		if Config.EmbedLrc || Config.SaveLrcFile {
+			lrcStr, err := lyrics.Get(track.Storefront, track.ID, Config.LrcType, Config.Language, Config.LrcFormat, token, mediaUserToken)
+			if err != nil {
+				fmt.Printf("Failed to get lyrics: %v\n", err)
+				counter.Error++
+				return
+			} else {
+				if Config.SaveLrcFile {
+					// Create directory if it doesn't exist
+					os.MkdirAll(track.SaveDir, os.ModePerm)
+					lrcFilename := fmt.Sprintf("%s.%s", forbiddenNames.ReplaceAllString(track.Resp.Attributes.Name, "_"), Config.LrcFormat)
+					err := writeLyrics(track.SaveDir, lrcFilename, lrcStr)
+					if err != nil {
+						fmt.Printf("Failed to write lyrics: %v\n", err)
+						counter.Error++
+						return
+					}
+					fmt.Printf("✅ Lyrics saved: %s\n", lrcFilename)
+				}
+				// Note: EmbedLrc is ignored in lyrics-only mode as there's no audio file to embed into
+			}
+		}
+		counter.Success++
+		return
+	}
 
 	//提前获取到的播放列表下track所在的专辑信息
 	if track.PreType == "playlists" && Config.UseSongInfoForPlaylist {
@@ -1341,66 +1386,101 @@ func ripAlbum(albumId string, token string, storefront string, mediaUserToken st
 	os.MkdirAll(albumFolderPath, os.ModePerm)
 	album.SaveName = albumFolderName
 	fmt.Println(albumFolderName)
-	if Config.SaveArtistCover && len(meta.Data[0].Relationships.Artists.Data) > 0{
-		if meta.Data[0].Relationships.Artists.Data[0].Attributes.Artwork.Url != "" {
-			_, err = writeCover(singerFolder, "folder", meta.Data[0].Relationships.Artists.Data[0].Attributes.Artwork.Url)
-			if err != nil {
-				fmt.Println("Failed to write artist cover.")
-			}
-		}
-	}
-	covPath, err := writeCover(albumFolderPath, "cover", meta.Data[0].Attributes.Artwork.URL)
-	if err != nil {
-		fmt.Println("Failed to write cover.")
-	}
-	if Config.SaveAnimatedArtwork && meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video != "" {
-		fmt.Println("Found Animation Artwork.")
 
-		motionvideoUrlSquare, err := extractVideo(meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video)
-		if err != nil {
-			fmt.Println("no motion video square.\n", err)
-		} else {
-			exists, err := fileExists(filepath.Join(albumFolderPath, "square_animated_artwork.mp4"))
+	var covPath string
+	// Handle covers-only mode at album level
+	if dl_covers {
+		fmt.Println("Downloading album cover only...")
+		if meta.Data[0].Attributes.Artwork.URL != "" {
+			covPath, err = writeCover(albumFolderPath, "cover", meta.Data[0].Attributes.Artwork.URL)
 			if err != nil {
-				fmt.Println("Failed to check if animated artwork square exists.")
-			}
-			if exists {
-				fmt.Println("Animated artwork square already exists locally.")
+				fmt.Printf("Failed to write album cover: %v\n", err)
 			} else {
-				fmt.Println("Animation Artwork Square Downloading...")
-				cmd := exec.Command("ffmpeg", "-loglevel", "quiet", "-y", "-i", motionvideoUrlSquare, "-c", "copy", filepath.Join(albumFolderPath, "square_animated_artwork.mp4"))
-				if err := cmd.Run(); err != nil {
-					fmt.Printf("animated artwork square dl err: %v\n", err)
+				fmt.Printf("✅ Album cover saved: %s\n", covPath)
+			}
+		} else {
+			fmt.Println("No artwork URL found for album")
+		}
+
+		// Also download artist cover if enabled
+		if Config.SaveArtistCover && len(meta.Data[0].Relationships.Artists.Data) > 0 {
+			if meta.Data[0].Relationships.Artists.Data[0].Attributes.Artwork.Url != "" {
+				artistCovPath, err := writeCover(singerFolder, "folder", meta.Data[0].Relationships.Artists.Data[0].Attributes.Artwork.Url)
+				if err != nil {
+					fmt.Println("Failed to write artist cover.")
 				} else {
-					fmt.Println("Animation Artwork Square Downloaded")
+					fmt.Printf("✅ Artist cover saved: %s\n", artistCovPath)
 				}
 			}
 		}
 
-		if Config.EmbyAnimatedArtwork {
-			cmd3 := exec.Command("ffmpeg", "-i", filepath.Join(albumFolderPath, "square_animated_artwork.mp4"), "-vf", "scale=440:-1", "-r", "24", "-f", "gif", filepath.Join(albumFolderPath, "folder.jpg"))
-			if err := cmd3.Run(); err != nil {
-				fmt.Printf("animated artwork square to gif err: %v\n", err)
+		// Skip individual track processing for covers-only mode
+		return nil
+	}
+
+	// Skip cover downloads in lyrics-only mode
+	if !dl_lyrics {
+		if Config.SaveArtistCover && len(meta.Data[0].Relationships.Artists.Data) > 0 {
+			if meta.Data[0].Relationships.Artists.Data[0].Attributes.Artwork.Url != "" {
+				_, err = writeCover(singerFolder, "folder", meta.Data[0].Relationships.Artists.Data[0].Attributes.Artwork.Url)
+				if err != nil {
+					fmt.Println("Failed to write artist cover.")
+				}
 			}
 		}
-
-		motionvideoUrlTall, err := extractVideo(meta.Data[0].Attributes.EditorialVideo.MotionDetailTall.Video)
+		covPath, err = writeCover(albumFolderPath, "cover", meta.Data[0].Attributes.Artwork.URL)
 		if err != nil {
-			fmt.Println("no motion video tall.\n", err)
-		} else {
-			exists, err := fileExists(filepath.Join(albumFolderPath, "tall_animated_artwork.mp4"))
+			fmt.Println("Failed to write cover.")
+		}
+		if Config.SaveAnimatedArtwork && meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video != "" {
+			fmt.Println("Found Animation Artwork.")
+
+			motionvideoUrlSquare, err := extractVideo(meta.Data[0].Attributes.EditorialVideo.MotionDetailSquare.Video)
 			if err != nil {
-				fmt.Println("Failed to check if animated artwork tall exists.")
-			}
-			if exists {
-				fmt.Println("Animated artwork tall already exists locally.")
+				fmt.Println("no motion video square.\n", err)
 			} else {
-				fmt.Println("Animation Artwork Tall Downloading...")
-				cmd := exec.Command("ffmpeg", "-loglevel", "quiet", "-y", "-i", motionvideoUrlTall, "-c", "copy", filepath.Join(albumFolderPath, "tall_animated_artwork.mp4"))
-				if err := cmd.Run(); err != nil {
-					fmt.Printf("animated artwork tall dl err: %v\n", err)
+				exists, err := fileExists(filepath.Join(albumFolderPath, "square_animated_artwork.mp4"))
+				if err != nil {
+					fmt.Println("Failed to check if animated artwork square exists.")
+				}
+				if exists {
+					fmt.Println("Animated artwork square already exists locally.")
 				} else {
-					fmt.Println("Animation Artwork Tall Downloaded")
+					fmt.Println("Animation Artwork Square Downloading...")
+					cmd := exec.Command("ffmpeg", "-loglevel", "quiet", "-y", "-i", motionvideoUrlSquare, "-c", "copy", filepath.Join(albumFolderPath, "square_animated_artwork.mp4"))
+					if err := cmd.Run(); err != nil {
+						fmt.Printf("animated artwork square dl err: %v\n", err)
+					} else {
+						fmt.Println("Animation Artwork Square Downloaded")
+					}
+				}
+			}
+
+			if Config.EmbyAnimatedArtwork {
+				cmd3 := exec.Command("ffmpeg", "-i", filepath.Join(albumFolderPath, "square_animated_artwork.mp4"), "-vf", "scale=440:-1", "-r", "24", "-f", "gif", filepath.Join(albumFolderPath, "folder.jpg"))
+				if err := cmd3.Run(); err != nil {
+					fmt.Printf("animated artwork square to gif err: %v\n", err)
+				}
+			}
+
+			motionvideoUrlTall, err := extractVideo(meta.Data[0].Attributes.EditorialVideo.MotionDetailTall.Video)
+			if err != nil {
+				fmt.Println("no motion video tall.\n", err)
+			} else {
+				exists, err := fileExists(filepath.Join(albumFolderPath, "tall_animated_artwork.mp4"))
+				if err != nil {
+					fmt.Println("Failed to check if animated artwork tall exists.")
+				}
+				if exists {
+					fmt.Println("Animated artwork tall already exists locally.")
+				} else {
+					fmt.Println("Animation Artwork Tall Downloading...")
+					cmd := exec.Command("ffmpeg", "-loglevel", "quiet", "-y", "-i", motionvideoUrlTall, "-c", "copy", filepath.Join(albumFolderPath, "tall_animated_artwork.mp4"))
+					if err := cmd.Run(); err != nil {
+						fmt.Printf("animated artwork tall dl err: %v\n", err)
+					} else {
+						fmt.Println("Animation Artwork Tall Downloaded")
+					}
 				}
 			}
 		}
@@ -1440,6 +1520,11 @@ func ripAlbum(albumId string, token string, storefront string, mediaUserToken st
 			counter.Total++
 			counter.Success++
 			continue
+		}
+		// Check if we should stop processing
+		if checkStopFile() {
+			fmt.Println("\n🛑 Download stopped by user")
+			return nil
 		}
 		if isInArray(selected, i) {
 			ripTrack(&album.Tracks[i-1], token, mediaUserToken)
@@ -1600,6 +1685,30 @@ func ripPlaylist(playlistId string, token string, storefront string, mediaUserTo
 	os.MkdirAll(playlistFolderPath, os.ModePerm)
 	playlist.SaveName = playlistFolder
 	fmt.Println(playlistFolder)
+
+	// Handle covers-only mode at playlist level
+	if dl_covers {
+		fmt.Println("Downloading playlist cover only...")
+		if meta.Data[0].Attributes.Artwork.URL != "" {
+			covPath, err := writeCover(playlistFolderPath, "cover", meta.Data[0].Attributes.Artwork.URL)
+			if err != nil {
+				fmt.Printf("Failed to write playlist cover: %v\n", err)
+			} else {
+				fmt.Printf("✅ Playlist cover saved: %s\n", covPath)
+			}
+		} else {
+			fmt.Println("No artwork URL found for playlist")
+		}
+
+		// Also download artist cover if enabled (for playlists, skip as structure is complex)
+		if Config.SaveArtistCover {
+			fmt.Println("Artist cover download not available for playlists")
+		}
+
+		// Skip individual track processing for covers-only mode
+		return nil
+	}
+
 	covPath, err := writeCover(playlistFolderPath, "cover", meta.Data[0].Attributes.Artwork.URL)
 	if err != nil {
 		fmt.Println("Failed to write cover.")
@@ -1681,6 +1790,11 @@ func ripPlaylist(playlistId string, token string, storefront string, mediaUserTo
 			counter.Total++
 			counter.Success++
 			continue
+		}
+		// Check if we should stop processing
+		if checkStopFile() {
+			fmt.Println("\n🛑 Download stopped by user")
+			return nil
 		}
 		if isInArray(selected, i) {
 			ripTrack(&playlist.Tracks[i-1], token, mediaUserToken)
@@ -1784,6 +1898,11 @@ func main() {
 		fmt.Printf("load Config failed: %v", err)
 		return
 	}
+
+	// Remove any existing stop file at start
+	stopFile := "stop.signal"
+	os.Remove(stopFile)
+
 	token, err := ampapi.GetToken()
 	if err != nil {
 		if Config.AuthorizationToken != "" && Config.AuthorizationToken != "your-authorization-token" {
@@ -1799,6 +1918,8 @@ func main() {
 	pflag.BoolVar(&dl_aac, "aac", false, "Enable adm-aac download mode")
 	pflag.BoolVar(&dl_select, "select", false, "Enable selective download")
 	pflag.BoolVar(&dl_song, "song", false, "Enable single song download mode")
+	pflag.BoolVar(&dl_lyrics, "lyrics-only", false, "Download lyrics only")
+	pflag.BoolVar(&dl_covers, "covers-only", false, "Download covers only")
 	pflag.BoolVar(&artist_select, "all-album", false, "Download all artist albums")
 	pflag.BoolVar(&debug_mode, "debug", false, "Enable debug mode to show audio quality information")
 	alac_max = pflag.Int("alac-max", Config.AlacMax, "Specify the max quality for download alac")
@@ -1872,6 +1993,11 @@ func main() {
 	albumTotal := len(os.Args)
 	for {
 		for albumNum, urlRaw := range os.Args {
+			// Check if we should stop processing
+			if checkStopFile() {
+				fmt.Println("\n🛑 Download stopped by user")
+				break
+			}
 			fmt.Printf("Queue %d of %d: ", albumNum+1, albumTotal)
 			var storefront, albumId string
 
@@ -1960,6 +2086,15 @@ func main() {
 			}
 		}
 		fmt.Printf("=======  [\u2714 ] Completed: %d/%d  |  [\u26A0 ] Warnings: %d  |  [\u2716 ] Errors: %d  =======\n", counter.Success, counter.Total, counter.Unavailable+counter.NotSong, counter.Error)
+
+		// Check if we should stop completely
+		if checkStopFile() {
+			fmt.Println("\n🛑 Download stopped by user")
+			// Clean up stop file
+			os.Remove("stop.signal")
+			break
+		}
+
 		if counter.Error == 0 {
 			break
 		}

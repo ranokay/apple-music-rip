@@ -1,4 +1,5 @@
 import os
+import signal
 import socket
 import subprocess
 import threading
@@ -14,7 +15,46 @@ wrapper_logs = []
 downloader_logs = []
 download_process = None
 download_running = False
-SURVEY_REPLACE_FLAG = "-mod=mod -replace=github.com/AlecAivazis/survey/v2=../wrapper/survey_stub"
+last_wrapper_log_count = 0  # Track number of lines we've seen
+SURVEY_REPLACE_FLAG = (
+    "-mod=mod -replace=github.com/AlecAivazis/survey/v2=../wrapper/survey_stub"
+)
+
+
+def get_wrapper_logs():
+    """Get logs from the wrapper Docker container."""
+    global last_wrapper_log_count
+
+    try:
+        # Get all logs from the wrapper container
+        result = subprocess.run(
+            ["docker", "logs", "wrapper-runtime"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+
+        if result.stdout:
+            # Split into lines
+            all_lines = result.stdout.strip().split("\n")
+
+            # Only add new lines since last check
+            if len(all_lines) > last_wrapper_log_count:
+                new_lines = all_lines[last_wrapper_log_count:]
+                for line in new_lines:
+                    if line.strip():  # Only add non-empty lines
+                        wrapper_logs.append(line.strip())
+
+                # Update count
+                last_wrapper_log_count = len(all_lines)
+
+        return True
+    except subprocess.TimeoutExpired:
+        wrapper_logs.append("⚠️ Timeout getting wrapper logs")
+        return False
+    except Exception:
+        # Don't spam error logs, just return False
+        return False
 
 
 def stream_download_logs(pipe, target_list):
@@ -77,30 +117,6 @@ def _check_wrapper_running():
         return False
 
 
-def stream_download_logs(pipe, target_list):
-    """Thread target to read logs from download process and store them."""
-    global download_running, download_process
-
-    try:
-        for line in iter(pipe.readline, ""):
-            line = line.strip()
-            if line:
-                target_list.append(line)
-                print(f"[DOWNLOAD LOG] {line}")  # Debug print
-
-    except Exception as e:
-        target_list.append(f"Error reading download logs: {str(e)}")
-    finally:
-        if download_process and download_process.poll() is not None:
-            exit_code = download_process.poll()
-            if exit_code == 0:
-                target_list.append("✅ Download completed successfully!")
-            else:
-                target_list.append(f"❌ Download failed with exit code: {exit_code}")
-            download_running = False
-        pipe.close()
-
-
 @app.route("/")
 def index():
     global wrapper_running
@@ -124,6 +140,7 @@ def download():
 
     link = request.form.get("link")
     format_choice = request.form.get("format")
+    download_mode = request.form.get("mode", "audio")  # New parameter for download mode
 
     wrapper_running = _check_wrapper_running()
     if not wrapper_running:
@@ -159,7 +176,11 @@ def download():
                 yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
 
             save_folder = ""
-            if format_choice == "atmos":
+            if download_mode == "lyrics":
+                save_folder = config.get("alac-save-folder", "AM-DL downloads")
+            elif download_mode == "covers":
+                save_folder = config.get("alac-save-folder", "AM-DL downloads")
+            elif format_choice == "atmos":
                 save_folder = config.get("atmos-save-folder", "AM-DL-Atmos downloads")
             elif format_choice == "aac":
                 save_folder = config.get("aac-save-folder", "AM-DL-AAC downloads")
@@ -171,9 +192,14 @@ def download():
         print(f"Error reading/writing config: {e}")
         downloader_logs.append(f"⚠️ Error updating config: {e}")
 
-    cmd = ["go", "run", "main.go", link]
-
-    if format_choice == "atmos":
+    # Build command based on download mode
+    if download_mode == "lyrics":
+        cmd = ["go", "run", "main.go", "--lyrics-only", link]
+        downloader_logs.append(f"🎵 Starting lyrics-only download: {link}")
+    elif download_mode == "covers":
+        cmd = ["go", "run", "main.go", "--covers-only", link]
+        downloader_logs.append(f"🎵 Starting covers-only download: {link}")
+    elif format_choice == "atmos":
         cmd = ["go", "run", "main.go", "--atmos", link]
         downloader_logs.append(f"🎵 Starting ATMOS download: {link}")
     elif format_choice == "aac":
@@ -181,8 +207,10 @@ def download():
         downloader_logs.append(f"🎵 Starting AAC download: {link}")
     elif format_choice == "hires":
         downloader_logs.append(f"🎵 Starting Hi-Res Lossless download: {link}")
+        cmd = ["go", "run", "main.go", link]
     else:
         downloader_logs.append(f"🎵 Starting Lossless download: {link}")
+        cmd = ["go", "run", "main.go", link]
 
     downloader_logs.append(f"📁 Working directory: {amd_dir}")
     downloader_logs.append(f"⚡ Executing: {' '.join(cmd)}")
@@ -201,6 +229,7 @@ def download():
             universal_newlines=True,
             cwd=amd_dir,  # Run from apple-music-downloader directory
             env=env,
+            start_new_session=True,
         )
 
         download_running = True
@@ -222,6 +251,9 @@ def download():
 @app.route("/get_logs")
 def get_logs():
     global wrapper_running, download_running, download_process
+
+    # Capture wrapper logs before returning
+    get_wrapper_logs()
 
     wrapper_running = _check_wrapper_running()
 
@@ -334,6 +366,48 @@ def save_config():
         return jsonify({"status": "ok", "msg": "Configuration saved successfully"})
     except Exception as e:
         return jsonify({"status": "error", "msg": str(e)})
+
+
+@app.route("/stop_download", methods=["POST"])
+def stop_download():
+    """Stop the currently running download process."""
+    global download_process, download_running, downloader_logs
+
+    if not download_running or not download_process:
+        return jsonify({"status": "error", "msg": "No download in progress"})
+
+    try:
+        # Create stop signal file in the Go program's directory
+        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        amd_dir = os.path.join(script_dir, "apple-music-downloader")
+        stop_file_path = os.path.join(amd_dir, "stop.signal")
+
+        # Create the stop signal file
+        with open(stop_file_path, "w") as f:
+            f.write("stop")
+
+        downloader_logs.append("🛑 Stop signal sent to downloader")
+
+        # Kill the entire process group immediately (go run + compiled child + tools)
+        try:
+            os.killpg(download_process.pid, signal.SIGKILL)
+            downloader_logs.append("🛑 Download killed")
+        except Exception:
+            # Fallback: kill only the direct process
+            try:
+                download_process.kill()
+                downloader_logs.append("🛑 Download killed (fallback)")
+            except Exception:
+                downloader_logs.append("⚠️ Failed to kill download process")
+
+        download_running = False
+        download_process = None
+
+        return jsonify({"status": "ok", "msg": "Download stopped successfully"})
+
+    except Exception as e:
+        downloader_logs.append(f"❌ Error stopping download: {str(e)}")
+        return jsonify({"status": "error", "msg": f"Failed to stop download: {str(e)}"})
 
 
 @app.route("/get_download_folders")
