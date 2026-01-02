@@ -1,3 +1,4 @@
+import json
 import os
 import signal
 import socket
@@ -141,6 +142,7 @@ def download():
     link = request.form.get("link")
     format_choice = request.form.get("format")
     download_mode = request.form.get("mode", "audio")  # New parameter for download mode
+    selected_tracks = (request.form.get("select_tracks") or "").strip()
 
     wrapper_running = _check_wrapper_running()
     if not wrapper_running:
@@ -212,6 +214,10 @@ def download():
         downloader_logs.append(f"🎵 Starting Lossless download: {link}")
         cmd = ["go", "run", "main.go", link]
 
+    if selected_tracks:
+        cmd = cmd[:3] + ["--select-tracks", selected_tracks] + cmd[3:]
+        downloader_logs.append(f"✅ Selected tracks: {selected_tracks}")
+
     downloader_logs.append(f"📁 Working directory: {amd_dir}")
     downloader_logs.append(f"⚡ Executing: {' '.join(cmd)}")
 
@@ -269,6 +275,64 @@ def get_logs():
             "download_running": download_running,
         }
     )
+
+
+@app.route("/preview", methods=["POST"])
+def preview():
+    """Get track list for an album/playlist/song URL (JSON), used by the UI to select tracks."""
+    global wrapper_running
+
+    link = request.form.get("link")
+    if not link or not link.strip():
+        return jsonify({"status": "error", "msg": "No URL provided"})
+
+    wrapper_running = _check_wrapper_running()
+    if not wrapper_running:
+        return jsonify({"status": "error", "msg": "Wrapper not reachable"})
+
+    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    amd_dir = os.path.join(script_dir, "apple-music-downloader")
+
+    env = os.environ.copy()
+    goflags = env.get("GOFLAGS", "").strip()
+    if SURVEY_REPLACE_FLAG not in goflags:
+        env["GOFLAGS"] = (goflags + " " + SURVEY_REPLACE_FLAG).strip()
+
+    try:
+        # Use Go's --preview mode which prints JSON to stdout
+        cmd = ["go", "run", "main.go", "--preview", link]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=amd_dir,
+            env=env,
+            timeout=60,
+        )
+
+        stdout = (result.stdout or "").strip()
+        stderr = (result.stderr or "").strip()
+
+        if result.returncode != 0:
+            return jsonify(
+                {
+                    "status": "error",
+                    "msg": stderr
+                    or stdout
+                    or f"Preview failed with exit code {result.returncode}",
+                }
+            )
+
+        if not stdout:
+            return jsonify({"status": "error", "msg": "Preview returned no data"})
+
+        data = json.loads(stdout)
+        return jsonify({"status": "ok", "data": data})
+
+    except subprocess.TimeoutExpired:
+        return jsonify({"status": "error", "msg": "Preview timed out"})
+    except Exception as e:
+        return jsonify({"status": "error", "msg": str(e)})
 
 
 @app.route("/settings")

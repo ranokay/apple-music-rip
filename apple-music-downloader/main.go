@@ -44,6 +44,8 @@ var (
 	dl_song        bool
 	dl_lyrics      bool
 	dl_covers      bool
+	preview_mode   bool
+	select_tracks  string
 	artist_select  bool
 	debug_mode     bool
 	alac_max       *int
@@ -54,7 +56,194 @@ var (
 	Config         structs.ConfigSet
 	counter        structs.Counter
 	okDict         = make(map[string][]int)
+	cliSelected    []int
 )
+
+func parseTrackSelection(input string) ([]int, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil, errors.New("empty selection")
+	}
+	selected := make(map[int]bool)
+	parts := strings.Split(input, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if strings.Contains(part, "-") {
+			rangeParts := strings.SplitN(part, "-", 2)
+			if len(rangeParts) != 2 {
+				return nil, fmt.Errorf("invalid range: %s", part)
+			}
+			startStr := strings.TrimSpace(rangeParts[0])
+			endStr := strings.TrimSpace(rangeParts[1])
+			start, err := strconv.Atoi(startStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid number: %s", startStr)
+			}
+			end, err := strconv.Atoi(endStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid number: %s", endStr)
+			}
+			if start <= 0 || end <= 0 || start > end {
+				return nil, fmt.Errorf("invalid range: %s", part)
+			}
+			for i := start; i <= end; i++ {
+				selected[i] = true
+			}
+		} else {
+			n, err := strconv.Atoi(part)
+			if err != nil {
+				return nil, fmt.Errorf("invalid number: %s", part)
+			}
+			if n <= 0 {
+				return nil, fmt.Errorf("invalid number: %d", n)
+			}
+			selected[n] = true
+		}
+	}
+	out := make([]int, 0, len(selected))
+	for k := range selected {
+		out = append(out, k)
+	}
+	sort.Ints(out)
+	if len(out) == 0 {
+		return nil, errors.New("no valid tracks")
+	}
+	return out, nil
+}
+
+type previewTrack struct {
+	Num         int    `json:"num"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Artist      string `json:"artist"`
+	Album       string `json:"album"`
+	DiscNumber  int    `json:"disc_number"`
+	TrackNumber int    `json:"track_number"`
+}
+
+type previewResp struct {
+	Kind        string         `json:"kind"`
+	Title       string         `json:"title"`
+	Artist      string         `json:"artist"`
+	Tracks      []previewTrack `json:"tracks"`
+	Preselected []int          `json:"preselected,omitempty"`
+}
+
+func printPreview(urlRaw string, token string) error {
+	if strings.Contains(urlRaw, "/song/") {
+		storefront, songId := checkUrlSong(urlRaw)
+		if storefront == "" || songId == "" {
+			return errors.New("invalid song URL")
+		}
+		manifest, err := ampapi.GetSongResp(storefront, songId, Config.Language, token)
+		if err != nil {
+			return err
+		}
+		song := manifest.Data[0]
+		resp := previewResp{
+			Kind:   "song",
+			Title:  song.Attributes.Name,
+			Artist: song.Attributes.ArtistName,
+			Tracks: []previewTrack{{
+				Num:         1,
+				ID:          song.ID,
+				Name:        song.Attributes.Name,
+				Artist:      song.Attributes.ArtistName,
+				Album:       song.Attributes.AlbumName,
+				DiscNumber:  song.Attributes.DiscNumber,
+				TrackNumber: song.Attributes.TrackNumber,
+			}},
+			Preselected: []int{1},
+		}
+		b, _ := json.Marshal(resp)
+		fmt.Print(string(b))
+		return nil
+	}
+
+	parsed, _ := url.Parse(urlRaw)
+	urlArgI := ""
+	if parsed != nil {
+		urlArgI = parsed.Query().Get("i")
+	}
+
+	if strings.Contains(urlRaw, "/album/") {
+		storefront, albumId := checkUrl(urlRaw)
+		if storefront == "" || albumId == "" {
+			return errors.New("invalid album URL")
+		}
+		album := task.NewAlbum(storefront, albumId)
+		if err := album.GetResp(token, Config.Language); err != nil {
+			return err
+		}
+		meta := album.Resp
+		tracks := make([]previewTrack, 0, len(meta.Data[0].Relationships.Tracks.Data))
+		pre := []int{}
+		for i, tr := range meta.Data[0].Relationships.Tracks.Data {
+			num := i + 1
+			tracks = append(tracks, previewTrack{
+				Num:         num,
+				ID:          tr.ID,
+				Name:        tr.Attributes.Name,
+				Artist:      tr.Attributes.ArtistName,
+				Album:       tr.Attributes.AlbumName,
+				DiscNumber:  tr.Attributes.DiscNumber,
+				TrackNumber: tr.Attributes.TrackNumber,
+			})
+			if urlArgI != "" && tr.ID == urlArgI {
+				pre = append(pre, num)
+			}
+		}
+		resp := previewResp{
+			Kind:        "album",
+			Title:       meta.Data[0].Attributes.Name,
+			Artist:      meta.Data[0].Attributes.ArtistName,
+			Tracks:      tracks,
+			Preselected: pre,
+		}
+		b, _ := json.Marshal(resp)
+		fmt.Print(string(b))
+		return nil
+	}
+
+	if strings.Contains(urlRaw, "/playlist/") {
+		storefront, playlistId := checkUrlPlaylist(urlRaw)
+		if storefront == "" || playlistId == "" {
+			return errors.New("invalid playlist URL")
+		}
+		pl := task.NewPlaylist(storefront, playlistId)
+		if err := pl.GetResp(token, Config.Language); err != nil {
+			return err
+		}
+		meta := pl.Resp
+		tracks := make([]previewTrack, 0, len(meta.Data[0].Relationships.Tracks.Data))
+		for i, tr := range meta.Data[0].Relationships.Tracks.Data {
+			num := i + 1
+			tracks = append(tracks, previewTrack{
+				Num:         num,
+				ID:          tr.ID,
+				Name:        tr.Attributes.Name,
+				Artist:      tr.Attributes.ArtistName,
+				Album:       tr.Attributes.AlbumName,
+				DiscNumber:  tr.Attributes.DiscNumber,
+				TrackNumber: tr.Attributes.TrackNumber,
+			})
+		}
+		resp := previewResp{
+			Kind:   "playlist",
+			Title:  meta.Data[0].Attributes.Name,
+			Artist: meta.Data[0].Attributes.ArtistName,
+			Tracks: tracks,
+		}
+		b, _ := json.Marshal(resp)
+		fmt.Print(string(b))
+		return nil
+	}
+
+	return errors.New("unsupported URL")
+}
 
 func loadConfig() error {
 	data, err := os.ReadFile("config.yaml")
@@ -896,9 +1085,16 @@ func ripTrack(track *task.Track, token string, mediaUserToken string) {
 	}
 	Tag_string := strings.Join(stringsToJoin, " ")
 
+	songNumer := track.TaskNum
+	useAlbumInfoForPlaylist := (track.PreType == "playlists" || track.PreType == "stations") &&
+		(Config.UseSongInfoForPlaylist || track.AlbumData.ID != "" || track.AlbumData.Attributes.Name != "")
+	if useAlbumInfoForPlaylist && track.Resp.Attributes.TrackNumber > 0 {
+		songNumer = track.Resp.Attributes.TrackNumber
+	}
+
 	songName := strings.NewReplacer(
 		"{SongId}", track.ID,
-		"{SongNumer}", fmt.Sprintf("%02d", track.TaskNum),
+		"{SongNumer}", fmt.Sprintf("%02d", songNumer),
 		"{SongName}", LimitString(track.Resp.Attributes.Name),
 		"{DiscNumber}", fmt.Sprintf("%0d", track.Resp.Attributes.DiscNumber),
 		"{TrackNumber}", fmt.Sprintf("%0d", track.Resp.Attributes.TrackNumber),
@@ -1509,10 +1705,14 @@ func ripAlbum(albumId string, token string, storefront string, mediaUserToken st
 		return nil
 	}
 	var selected []int
-	if !dl_select {
-		selected = arr
+	if dl_select {
+		if len(cliSelected) > 0 {
+			selected = cliSelected
+		} else {
+			selected = album.ShowSelect()
+		}
 	} else {
-		selected = album.ShowSelect()
+		selected = arr
 	}
 	for i := range album.Tracks {
 		i++
@@ -1757,7 +1957,11 @@ func ripPlaylist(playlistId string, token string, storefront string, mediaUserTo
 	if !dl_select {
 		selected = arr
 	} else {
-		selected = playlist.ShowSelect()
+		if len(cliSelected) > 0 {
+			selected = cliSelected
+		} else {
+			selected = playlist.ShowSelect()
+		}
 	}
 	for i := range playlist.Tracks {
 		i++
@@ -2040,6 +2244,8 @@ func main() {
 	pflag.BoolVar(&dl_song, "song", false, "Enable single song download mode")
 	pflag.BoolVar(&dl_lyrics, "lyrics-only", false, "Download lyrics only")
 	pflag.BoolVar(&dl_covers, "covers-only", false, "Download covers only")
+	pflag.BoolVar(&preview_mode, "preview", false, "Output JSON track list and exit")
+	pflag.StringVar(&select_tracks, "select-tracks", "", "Comma-separated track numbers/ranges to download (e.g. 1,2,5-7)")
 	pflag.BoolVar(&artist_select, "all-album", false, "Download all artist albums")
 	pflag.BoolVar(&debug_mode, "debug", false, "Enable debug mode to show audio quality information")
 	alac_max = pflag.Int("alac-max", Config.AlacMax, "Specify the max quality for download alac")
@@ -2064,6 +2270,16 @@ func main() {
 
 	args := pflag.Args()
 
+	if select_tracks != "" {
+		selected, err := parseTrackSelection(select_tracks)
+		if err != nil {
+			fmt.Printf("Invalid --select-tracks: %v\n", err)
+			os.Exit(2)
+		}
+		cliSelected = selected
+		dl_select = true
+	}
+
 	if search_type != "" {
 		if len(args) == 0 {
 			fmt.Println("Error: --search flag requires a query.")
@@ -2087,6 +2303,15 @@ func main() {
 			return
 		}
 		os.Args = args
+	}
+
+	if preview_mode {
+		err := printPreview(os.Args[0], token)
+		if err != nil {
+			fmt.Printf("%v", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	if strings.Contains(os.Args[0], "/artist/") {
