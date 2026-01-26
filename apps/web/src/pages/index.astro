@@ -1,0 +1,22 @@
+---
+import "@/styles/global.css";
+import App from "@/components/app/App";
+---
+
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="generator" content={Astro.generator} />
+    <title>Apple Music Rip — Downloader UI</title>
+    <meta
+      name="description"
+      content="A modern control room for previewing and downloading Apple Music releases with multiple formats."
+    />
+  </head>
+  <body>
+    <App client:load />
+  </body>
+</html>
