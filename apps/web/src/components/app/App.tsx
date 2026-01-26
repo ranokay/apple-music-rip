@@ -99,6 +99,11 @@ type LogsPayload = {
 	progress?: { label: string; percent: number; details: string };
 };
 
+type FolderEntry = {
+	name: string;
+	path: string;
+};
+
 const defaultProgress = { label: "", percent: 0, details: "" };
 
 function isNearBottom(container: HTMLDivElement | null) {
@@ -168,6 +173,10 @@ export default function App() {
 		lossless: false,
 		aac: false,
 	});
+	const [configDraft, setConfigDraft] = useState<Record<
+		string,
+		unknown
+	> | null>(null);
 	const [qualityError, setQualityError] = useState(false);
 	const [trackError, setTrackError] = useState("");
 	const [searching, setSearching] = useState(false);
@@ -177,6 +186,20 @@ export default function App() {
 		aac: string;
 	} | null>(null);
 	const [statusMessage, setStatusMessage] = useState<string | null>(null);
+	const [savingFolders, setSavingFolders] = useState(false);
+	const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+	const [folderPickerTarget, setFolderPickerTarget] = useState<
+		"alac" | "atmos" | "aac"
+	>("alac");
+	const [folderPickerPath, setFolderPickerPath] = useState("");
+	const [folderPickerParent, setFolderPickerParent] = useState<string | null>(
+		null,
+	);
+	const [folderEntries, setFolderEntries] = useState<FolderEntry[]>([]);
+	const [folderPickerLoading, setFolderPickerLoading] = useState(false);
+	const [folderPickerError, setFolderPickerError] = useState<string | null>(
+		null,
+	);
 
 	const downloaderRef = useRef<HTMLDivElement | null>(null);
 	const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -228,9 +251,31 @@ export default function App() {
 			try {
 				const data = await fetchJson<{
 					status: string;
+					config?: Record<string, unknown>;
+				}>("/api/get-config");
+				if (data.status === "ok" && data.config) {
+					setConfigDraft(data.config);
+					setFolders({
+						alac: String(data.config["alac-save-folder"] ?? "AM-DL downloads"),
+						atmos: String(
+							data.config["atmos-save-folder"] ?? "AM-DL-Atmos downloads",
+						),
+						aac: String(
+							data.config["aac-save-folder"] ?? "AM-DL-AAC downloads",
+						),
+					});
+					return;
+				}
+			} catch {
+				// ignore
+			}
+
+			try {
+				const fallback = await fetchJson<{
+					status: string;
 					folders: { alac: string; atmos: string; aac: string };
 				}>("/api/get-download-folders");
-				if (data.status === "ok") setFolders(data.folders);
+				if (fallback.status === "ok") setFolders(fallback.folders);
 			} catch {
 				// ignore
 			}
@@ -410,6 +455,79 @@ export default function App() {
 		setSelectedQualities((prev) => ({ ...prev, [quality]: !prev[quality] }));
 	};
 
+	const updateFolderField = (key: "alac" | "atmos" | "aac", value: string) => {
+		setFolders((prev) => (prev ? { ...prev, [key]: value } : prev));
+		setConfigDraft((prev) => {
+			if (!prev) return prev;
+			const map = {
+				alac: "alac-save-folder",
+				atmos: "atmos-save-folder",
+				aac: "aac-save-folder",
+			} as const;
+			return { ...prev, [map[key]]: value };
+		});
+	};
+
+	const handleSaveFolders = async () => {
+		if (!configDraft) {
+			setStatusMessage("Load config before saving folders.");
+			return;
+		}
+		setSavingFolders(true);
+		try {
+			const res = await fetchJson<{ status: string; msg?: string }>(
+				"/api/save-config",
+				{
+					method: "POST",
+					body: JSON.stringify(configDraft),
+				},
+			);
+			if (res.status === "ok") {
+				setStatusMessage(res.msg || "Download destinations updated.");
+			} else {
+				setStatusMessage(res.msg || "Failed to save download destinations.");
+			}
+		} catch {
+			setStatusMessage("Failed to save download destinations.");
+		} finally {
+			setSavingFolders(false);
+		}
+	};
+
+	const loadFolderEntries = async (pathValue?: string) => {
+		setFolderPickerLoading(true);
+		setFolderPickerError(null);
+		try {
+			const query = pathValue ? `?path=${encodeURIComponent(pathValue)}` : "";
+			const res = await fetchJson<{
+				status: string;
+				path?: string;
+				parent?: string | null;
+				entries?: FolderEntry[];
+				msg?: string;
+			}>(`/api/fs${query}`);
+			if (res.status === "ok" && res.path && res.entries) {
+				setFolderPickerPath(res.path);
+				setFolderPickerParent(res.parent === undefined ? null : res.parent);
+				setFolderEntries(res.entries);
+				setFolderPickerError(null);
+			} else {
+				setFolderPickerError(res.msg || "Failed to load folders.");
+			}
+		} catch {
+			setFolderPickerError("Failed to load folders.");
+		} finally {
+			setFolderPickerLoading(false);
+		}
+	};
+
+	const openFolderPicker = (target: "alac" | "atmos" | "aac") => {
+		setFolderPickerTarget(target);
+		setFolderPickerOpen(true);
+		const startPath = folders?.[target] || "";
+		loadFolderEntries(startPath);
+	};
+
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-rose-50 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100">
 			<div className="relative overflow-hidden">
@@ -486,7 +604,7 @@ export default function App() {
 									</div>
 
 									<div className="grid gap-3 rounded-xl border border-slate-200 bg-white/70 p-4 dark:border-slate-800 dark:bg-slate-900/70">
-										<div className="flex items-center justify-between">
+										<div className="flex w-full items-center justify-between gap-3">
 											<div>
 												<p className="text-sm font-medium text-slate-900 dark:text-slate-100">
 													Download mode
@@ -568,30 +686,81 @@ export default function App() {
 											Keep track of where each format lands.
 										</CardDescription>
 									</CardHeader>
-									<CardContent className="grid gap-3 text-sm text-slate-600 dark:text-slate-300 sm:grid-cols-3">
-										<div>
-											<p className="text-xs uppercase tracking-widest text-slate-400 dark:text-slate-500">
-												ALAC
-											</p>
-											<p className="font-medium text-slate-700 dark:text-slate-200">
-												{folders.alac}
-											</p>
+									<CardContent className="grid gap-4">
+										<div className="grid gap-3 sm:grid-cols-3">
+											<div className="grid gap-2">
+												<Label className="text-xs uppercase tracking-widest text-slate-400 dark:text-slate-500">
+													ALAC
+												</Label>
+												<div className="flex gap-2">
+													<Input
+														className="flex-1"
+														value={folders.alac}
+														onChange={(event) =>
+															updateFolderField("alac", event.target.value)
+														}
+													/>
+													<Button
+														variant="outline"
+														size="sm"
+														onClick={() => openFolderPicker("alac")}
+													>
+														Browse
+													</Button>
+												</div>
+											</div>
+											<div className="grid gap-2">
+												<Label className="text-xs uppercase tracking-widest text-slate-400 dark:text-slate-500">
+													Atmos
+												</Label>
+												<div className="flex gap-2">
+													<Input
+														className="flex-1"
+														value={folders.atmos}
+														onChange={(event) =>
+															updateFolderField("atmos", event.target.value)
+														}
+													/>
+													<Button
+														variant="outline"
+														size="sm"
+														onClick={() => openFolderPicker("atmos")}
+													>
+														Browse
+													</Button>
+												</div>
+											</div>
+											<div className="grid gap-2">
+												<Label className="text-xs uppercase tracking-widest text-slate-400 dark:text-slate-500">
+													AAC
+												</Label>
+												<div className="flex gap-2">
+													<Input
+														className="flex-1"
+														value={folders.aac}
+														onChange={(event) =>
+															updateFolderField("aac", event.target.value)
+														}
+													/>
+													<Button
+														variant="outline"
+														size="sm"
+														onClick={() => openFolderPicker("aac")}
+													>
+														Browse
+													</Button>
+												</div>
+											</div>
 										</div>
-										<div>
-											<p className="text-xs uppercase tracking-widest text-slate-400 dark:text-slate-500">
-												Atmos
-											</p>
-											<p className="font-medium text-slate-700 dark:text-slate-200">
-												{folders.atmos}
-											</p>
-										</div>
-										<div>
-											<p className="text-xs uppercase tracking-widest text-slate-400 dark:text-slate-500">
-												AAC
-											</p>
-											<p className="font-medium text-slate-700 dark:text-slate-200">
-												{folders.aac}
-											</p>
+										<div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+											<span>Saved to config.yaml</span>
+											<Button
+												size="sm"
+												onClick={handleSaveFolders}
+												disabled={savingFolders || !configDraft}
+											>
+												{savingFolders ? "Saving..." : "Save destinations"}
+											</Button>
 										</div>
 									</CardContent>
 								</Card>
@@ -599,7 +768,7 @@ export default function App() {
 
 							<Card className="border-slate-200/60 dark:border-slate-800/80 dark:bg-slate-950/40">
 								<CardHeader className="flex flex-col gap-3">
-									<div className="flex items-center justify-between">
+									<div className="flex w-full items-center justify-between gap-3">
 										<CardTitle className="text-base">
 											Downloader Activity
 										</CardTitle>
@@ -880,6 +1049,100 @@ export default function App() {
 									Start download
 								</Button>
 							</div>
+						</div>
+					</div>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog open={folderPickerOpen} onOpenChange={setFolderPickerOpen}>
+				<DialogContent className="max-w-2xl dark:border-slate-800 dark:bg-slate-950/95">
+					<DialogHeader>
+						<DialogTitle className="text-lg">Choose folder</DialogTitle>
+						<DialogDescription>
+							Select a destination for{" "}
+							<span className="font-semibold uppercase">
+								{folderPickerTarget}
+							</span>
+							.
+						</DialogDescription>
+					</DialogHeader>
+
+					<div className="grid gap-3">
+						<div className="flex flex-wrap items-center gap-2">
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={!folderPickerParent || folderPickerLoading}
+								onClick={() =>
+									folderPickerParent && loadFolderEntries(folderPickerParent)
+								}
+							>
+								Up
+							</Button>
+							<Input
+								className="flex-1"
+								value={folderPickerPath}
+								onChange={(event) => setFolderPickerPath(event.target.value)}
+								onKeyDown={(event) => {
+									if (event.key === "Enter") {
+										loadFolderEntries(folderPickerPath);
+									}
+								}}
+							/>
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={folderPickerLoading}
+								onClick={() => loadFolderEntries(folderPickerPath)}
+							>
+								Go
+							</Button>
+						</div>
+
+						{folderPickerError ? (
+							<p className="text-xs text-rose-500 dark:text-rose-400">
+								{folderPickerError}
+							</p>
+						) : null}
+
+						<div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white/70 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950/60">
+							{folderPickerLoading ? (
+								<p className="text-xs text-slate-500 dark:text-slate-400">
+									Loading folders...
+								</p>
+							) : folderEntries.length === 0 ? (
+								<p className="text-xs text-slate-500 dark:text-slate-400">
+									No folders found.
+								</p>
+							) : (
+								folderEntries.map((entry) => (
+									<button
+										key={entry.path}
+										type="button"
+										onClick={() => loadFolderEntries(entry.path)}
+										className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900/70"
+									>
+										<span>{entry.name}</span>
+									</button>
+								))
+							)}
+						</div>
+
+						<div className="flex items-center justify-end gap-3">
+							<Button
+								variant="outline"
+								onClick={() => setFolderPickerOpen(false)}
+							>
+								Cancel
+							</Button>
+							<Button
+								onClick={() => {
+									updateFolderField(folderPickerTarget, folderPickerPath);
+									setFolderPickerOpen(false);
+								}}
+							>
+								Select this folder
+							</Button>
 						</div>
 					</div>
 				</DialogContent>
