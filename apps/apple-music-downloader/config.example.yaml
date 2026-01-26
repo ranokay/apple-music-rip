@@ -1,6 +1,6 @@
 media-user-token: your-media-user-token
 authorization-token: your-authorization-token
-language: ''
+language: en-gb&l%5Bscript%5D=en-Latn
 lrc-type: syllable-lyrics
 lrc-format: ttml
 embed-lrc: false
@@ -23,13 +23,13 @@ aac-type: aac-lc
 alac-max: 192000
 atmos-max: 2768
 limit-max: 200
-album-folder-format: '{AlbumName}'
-playlist-folder-format: '{PlaylistName}'
-song-file-format: '{SongNumer}. {SongName}'
-artist-folder-format: '{UrlArtistName}'
-explicit-choice: '[E]'
-clean-choice: '[C]'
-apple-master-choice: '[M]'
+album-folder-format: "[{ReleaseYear}] - {AlbumName}"
+playlist-folder-format: "{PlaylistName}"
+song-file-format: "{SongNumer} - {SongName}"
+artist-folder-format: "{UrlArtistName}"
+explicit-choice: "[E]"
+clean-choice: "[C]"
+apple-master-choice: "[M]"
 use-songinfo-for-playlist: false
 dl-albumcover-for-playlist: false
 mv-audio-type: atmos
@@ -40,6 +40,6 @@ convert-format: flac
 convert-keep-original: false
 convert-skip-if-source-matches: true
 ffmpeg-path: ffmpeg
-convert-extra-args: ''
+convert-extra-args: ""
 convert-warn-lossy-to-lossless: true
 convert-skip-lossy-to-lossless: true
