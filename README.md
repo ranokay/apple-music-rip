@@ -1,3 +1,5 @@
+# Apple Music Rip
+
 ```bash
 git init monorepo
 cd monorepo
@@ -10,16 +12,16 @@ git fetch amd
 git fetch wrapper
 
 # import as subtrees into apps/...
-git subtree add --prefix=apps/apple-music-downloader amd main --squash=false
-git subtree add --prefix=apps/wrapper wrapper main --squash=false
+git subtree add --prefix=apps/apple-music-downloader amd main
+git subtree add --prefix=apps/wrapper wrapper main
 ```
 
 To pull latest upstream later:
 
 ```bash
 git fetch amd
-git subtree pull --prefix=apps/apple-music-downloader amd main --squash=false
+git subtree pull --prefix=apps/apple-music-downloader amd main
 
 git fetch wrapper
-git subtree pull --prefix=apps/wrapper wrapper main --squash=false
+git subtree pull --prefix=apps/wrapper wrapper main
 ```
