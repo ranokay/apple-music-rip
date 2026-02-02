@@ -1,0 +1,6 @@
+[submodule "apps/wrapper"]
+	path = apps/wrapper
+	url = https://github.com/ranokay/wrapper.git
+[submodule "apps/apple-music-downloader"]
+	path = apps/apple-music-downloader
+	url = https://github.com/ranokay/apple-music-downloader.git
