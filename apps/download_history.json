@@ -1,8 +1,472 @@
 {
   "artists": {
-    "IVE": {
-      "albums": [],
+    "Alan Walker": {
+      "albums": [
+        {
+          "name": "World Of Walker",
+          "link": "https://music.apple.com/ro/album/1596240407",
+          "tracks": [
+            2,
+            3,
+            4,
+            8,
+            9,
+            10,
+            12,
+            13
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T10:47:16.467Z",
+          "last_updated": "2026-02-03T10:47:16.467Z"
+        },
+        {
+          "name": "Different World",
+          "link": "https://music.apple.com/ro/album/1445140820",
+          "tracks": [
+            2,
+            3,
+            4,
+            6,
+            7,
+            9,
+            10,
+            11,
+            12,
+            13,
+            15
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T10:47:16.468Z",
+          "last_updated": "2026-02-03T10:47:16.468Z"
+        }
+      ],
       "eps": [
+        {
+          "name": "Walkerverse, Pt. I - EP",
+          "link": "https://music.apple.com/ro/album/1625863063",
+          "tracks": [
+            2,
+            5
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T10:47:16.468Z",
+          "last_updated": "2026-02-03T10:47:16.468Z"
+        },
+        {
+          "name": "Walkerverse Pt. II - EP",
+          "link": "https://music.apple.com/ro/album/1653435375",
+          "tracks": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T10:47:16.469Z",
+          "last_updated": "2026-02-03T10:47:16.469Z"
+        }
+      ],
+      "singles": [
+        {
+          "name": "The Spectre - Single",
+          "link": "https://music.apple.com/ro/album/1277697257",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T10:47:16.469Z",
+          "last_updated": "2026-02-03T10:47:16.469Z"
+        },
+        {
+          "name": "Tired (feat. Gavin James) - Single",
+          "link": "https://music.apple.com/ro/album/1235474539",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T10:47:16.469Z",
+          "last_updated": "2026-02-03T10:47:16.469Z"
+        }
+      ]
+    },
+    "K-391, Alan Walker & Tungevaag": {
+      "albums": [],
+      "eps": [],
+      "singles": [
+        {
+          "name": "Play (feat. Mangoo) - Single",
+          "link": "https://music.apple.com/ro/album/1477094885",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T10:47:16.469Z",
+          "last_updated": "2026-02-03T11:00:05.998Z"
+        }
+      ]
+    },
+    "K-391, Alan Walker & Ahrix": {
+      "albums": [],
+      "eps": [],
+      "singles": [
+        {
+          "name": "End of Time - Single",
+          "link": "https://music.apple.com/ro/album/1500237173",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T11:00:05.999Z",
+          "last_updated": "2026-02-03T11:00:05.999Z"
+        }
+      ]
+    },
+    "K-391 & RØRY": {
+      "albums": [],
+      "eps": [],
+      "singles": [
+        {
+          "name": "Aurora - Single",
+          "link": "https://music.apple.com/ro/album/1534261723",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T11:00:06.000Z",
+          "last_updated": "2026-02-03T11:00:06.000Z"
+        }
+      ]
+    },
+    "Arcane & League of Legends Music": {
+      "albums": [
+        {
+          "name": "Arcane League of Legends: Season 2 Original Soundtrack (Extended Edition)",
+          "link": "https://music.apple.com/ro/album/1803590047",
+          "tracks": [
+            12,
+            15,
+            16,
+            18,
+            19,
+            22,
+            25,
+            26,
+            27,
+            29
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T11:28:28.463Z",
+          "last_updated": "2026-02-03T11:28:28.463Z"
+        }
+      ],
+      "eps": [],
+      "singles": []
+    },
+    "Arcane": {
+      "albums": [
+        {
+          "name": "Vol. 3: Arcane League of Legends (Season 2 Original Score)",
+          "link": "https://music.apple.com/ro/album/1779183672",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T11:28:28.469Z",
+          "last_updated": "2026-02-03T11:28:28.469Z"
+        }
+      ],
+      "eps": [],
+      "singles": []
+    },
+    "Various Artists": {
+      "albums": [
+        {
+          "name": "Arcane League of Legends (Soundtrack from the Animated Series)",
+          "link": "https://music.apple.com/ro/album/1748186906",
+          "tracks": [
+            8
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T11:28:28.469Z",
+          "last_updated": "2026-02-03T11:28:28.469Z"
+        }
+      ],
+      "eps": [],
+      "singles": []
+    },
+    "BABYMONSTER": {
+      "albums": [
+        {
+          "name": "DRIP",
+          "link": "https://music.apple.com/ro/album/1773262053",
+          "tracks": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T12:19:53.798Z",
+          "last_updated": "2026-02-03T12:19:53.798Z"
+        }
+      ],
+      "eps": [
+        {
+          "name": "BABYMONS7ER - EP",
+          "link": "https://music.apple.com/ro/album/1737962888",
+          "tracks": [
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T12:19:53.799Z",
+          "last_updated": "2026-02-03T12:19:53.799Z"
+        },
+        {
+          "name": "WE GO UP - EP",
+          "link": "https://music.apple.com/ro/album/1843247940",
+          "tracks": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T12:19:53.799Z",
+          "last_updated": "2026-02-03T12:19:53.799Z"
+        }
+      ],
+      "singles": [
+        {
+          "name": "Ghost - Single",
+          "link": "https://music.apple.com/ro/album/1810613358",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T12:19:53.799Z",
+          "last_updated": "2026-02-03T12:19:53.799Z"
+        },
+        {
+          "name": "HOT SAUCE - Single",
+          "link": "https://music.apple.com/ro/album/1822714115",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T12:19:53.799Z",
+          "last_updated": "2026-02-03T12:19:53.799Z"
+        },
+        {
+          "name": "BATTER UP -JP Version - Single",
+          "link": "https://music.apple.com/ro/album/1762582747",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T12:19:53.799Z",
+          "last_updated": "2026-02-03T12:19:53.799Z"
+        }
+      ]
+    },
+    "IVE & David Guetta": {
+      "albums": [],
+      "eps": [],
+      "singles": [
+        {
+          "name": "Supernova Love - Single",
+          "link": "https://music.apple.com/ro/album/1776623956",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.275Z",
+          "last_updated": "2026-02-03T13:57:34.275Z"
+        }
+      ]
+    },
+    "IVE": {
+      "albums": [
+        {
+          "name": "I've IVE",
+          "link": "https://music.apple.com/ro/album/1680047093",
+          "tracks": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.275Z",
+          "last_updated": "2026-02-03T13:57:34.275Z"
+        }
+      ],
+      "eps": [
+        {
+          "name": "WAVE - EP",
+          "link": "https://music.apple.com/ro/album/1685789440",
+          "tracks": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "formats": [
+            "hires"
+          ],
+          "date_added": "2026-02-03T13:57:34.276Z",
+          "last_updated": "2026-02-03T13:57:34.276Z"
+        },
+        {
+          "name": "I'VE MINE - EP",
+          "link": "https://music.apple.com/ro/album/1709569466",
+          "tracks": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.276Z",
+          "last_updated": "2026-02-03T13:57:34.276Z"
+        },
+        {
+          "name": "IVE SWITCH - EP",
+          "link": "https://music.apple.com/ro/album/1741070979",
+          "tracks": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.277Z",
+          "last_updated": "2026-02-03T13:57:34.277Z"
+        },
+        {
+          "name": "ALIVE - EP",
+          "link": "https://music.apple.com/ro/album/1763022300",
+          "tracks": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.277Z",
+          "last_updated": "2026-02-03T13:57:34.277Z"
+        },
+        {
+          "name": "IVE EMPATHY - EP",
+          "link": "https://music.apple.com/ro/album/1789740675",
+          "tracks": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.277Z",
+          "last_updated": "2026-02-03T13:57:34.277Z"
+        },
+        {
+          "name": "Be Alright - EP",
+          "link": "https://music.apple.com/ro/album/1824398909",
+          "tracks": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.278Z",
+          "last_updated": "2026-02-03T13:57:34.278Z"
+        },
         {
           "name": "IVE SECRET - EP",
           "link": "https://music.apple.com/ro/album/1831903462",
@@ -15,625 +479,229 @@
             6
           ],
           "formats": [
-            "atmos",
-            "hires"
+            "hires",
+            "atmos"
           ],
-          "date_added": "2026-01-27T11:01:00.223Z",
-          "last_updated": "2026-01-29T12:45:05.651Z"
-        }
-      ],
-      "singles": []
-    },
-    "NF": {
-      "albums": [
-        {
-          "name": "Perception",
-          "link": "https://music.apple.com/ro/album/1440848910",
-          "tracks": [
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10,
-            11,
-            12,
-            13,
-            14,
-            15,
-            16
-          ],
-          "formats": [
-            "atmos",
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.746Z",
-          "last_updated": "2026-01-28T12:19:13.296Z"
-        },
-        {
-          "name": "HOPE",
-          "link": "https://music.apple.com/ro/album/1670412644",
-          "tracks": [
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10,
-            11,
-            12,
-            13
-          ],
-          "formats": [
-            "atmos",
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.746Z",
-          "last_updated": "2026-01-28T12:19:13.296Z"
-        },
-        {
-          "name": "Mansion",
-          "link": "https://music.apple.com/ro/album/1440816421",
-          "tracks": [
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            10,
-            11,
-            12
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.747Z",
-          "last_updated": "2026-01-28T12:19:13.295Z"
-        },
-        {
-          "name": "Therapy Session",
-          "link": "https://music.apple.com/ro/album/1440845435",
-          "tracks": [
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10,
-            11,
-            12,
-            13,
-            14
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.747Z",
-          "last_updated": "2026-01-28T12:19:13.295Z"
-        },
-        {
-          "name": "The Search",
-          "link": "https://music.apple.com/ro/album/1470132470",
-          "tracks": [
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10,
-            12,
-            13,
-            14,
-            15,
-            16,
-            17,
-            18,
-            19
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.747Z",
-          "last_updated": "2026-01-28T12:19:13.296Z"
-        },
-        {
-          "name": "CLOUDS (THE MIXTAPE)",
-          "link": "https://music.apple.com/ro/album/1553380833",
-          "tracks": [
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.747Z",
-          "last_updated": "2026-01-28T12:19:13.296Z"
-        }
-      ],
-      "eps": [
-        {
-          "name": "NF - EP",
-          "link": "https://music.apple.com/ro/album/1440853741",
-          "tracks": [
-            3,
-            4,
-            5,
-            6
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.747Z",
-          "last_updated": "2026-01-28T12:19:13.297Z"
-        },
-        {
-          "name": "FEAR - EP",
-          "link": "https://music.apple.com/ro/album/1848272861",
-          "tracks": [
-            1,
-            2,
-            3,
-            4,
-            5,
-            6
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.747Z",
-          "last_updated": "2026-01-28T12:19:13.298Z"
+          "date_added": "2026-02-03T13:57:34.278Z",
+          "last_updated": "2026-02-03T13:57:34.278Z"
         }
       ],
       "singles": [
         {
-          "name": "Warm Up - Single",
-          "link": "https://music.apple.com/ro/album/1444888906",
-          "tracks": [
-            1
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.747Z",
-          "last_updated": "2026-01-28T12:19:13.298Z"
-        },
-        {
-          "name": "No Name - Single",
-          "link": "https://music.apple.com/ro/album/1445146173",
-          "tracks": [
-            1
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.747Z",
-          "last_updated": "2026-01-28T12:19:13.298Z"
-        },
-        {
-          "name": "Chasing_(Demo) [feat. Mikayla Sippel] - Single",
-          "link": "https://music.apple.com/ro/album/1535226857",
-          "tracks": [
-            1
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.747Z",
-          "last_updated": "2026-01-28T12:19:13.298Z"
-        }
-      ]
-    },
-    "Beach Weather": {
-      "albums": [
-        {
-          "name": "Pineapple Sunrise",
-          "link": "https://music.apple.com/ro/album/1663903966",
-          "tracks": [
-            11
-          ],
-          "formats": [
-            "atmos",
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.746Z",
-          "last_updated": "2026-01-28T12:19:13.298Z"
-        }
-      ],
-      "eps": [],
-      "singles": []
-    },
-    "Djo": {
-      "albums": [
-        {
-          "name": "DECIDE",
-          "link": "https://music.apple.com/ro/album/1632447652",
-          "tracks": [
-            6
-          ],
-          "formats": [
-            "atmos",
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.746Z",
-          "last_updated": "2026-01-28T12:19:13.299Z"
-        }
-      ],
-      "eps": [],
-      "singles": []
-    },
-    "Lewis Capaldi": {
-      "albums": [
-        {
-          "name": "Divinely Uninspired To A Hellish Extent",
-          "link": "https://music.apple.com/ro/album/1452618876",
-          "tracks": [
-            4
-          ],
-          "formats": [
-            "atmos",
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.747Z",
-          "last_updated": "2026-01-28T12:19:13.299Z"
-        }
-      ],
-      "eps": [
-        {
-          "name": "Survive - EP",
-          "link": "https://music.apple.com/ro/album/1845325742",
-          "tracks": [
-            4
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.748Z",
-          "last_updated": "2026-01-28T12:19:13.299Z"
-        }
-      ],
-      "singles": []
-    },
-    "Winona Oak & Boy In Space": {
-      "albums": [],
-      "eps": [],
-      "singles": [
-        {
-          "name": "Inside Out - Single",
-          "link": "https://music.apple.com/ro/album/1732142511",
-          "tracks": [
-            1
-          ],
-          "formats": [
-            "atmos",
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.747Z",
-          "last_updated": "2026-01-28T12:19:13.300Z"
-        }
-      ]
-    },
-    "FUTURISTIC": {
-      "albums": [],
-      "eps": [],
-      "singles": [
-        {
-          "name": "Epiphany (feat. NF) - Single",
-          "link": "https://music.apple.com/ro/album/1215602706",
-          "tracks": [
-            1
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.747Z",
-          "last_updated": "2026-01-28T12:19:13.298Z"
-        }
-      ]
-    },
-    "Videoclub": {
-      "albums": [
-        {
-          "name": "Euphories",
-          "link": "https://music.apple.com/ro/album/1543895613",
+          "name": "ELEVEN - Single",
+          "link": "https://music.apple.com/ro/album/1597404250",
           "tracks": [
             1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10,
-            11,
-            12,
-            13
+            2
           ],
           "formats": [
-            "hires"
+            "hires",
+            "atmos"
           ],
-          "date_added": "2026-01-27T14:12:44.747Z",
-          "last_updated": "2026-01-28T12:19:13.298Z"
-        }
-      ],
-      "eps": [],
-      "singles": []
-    },
-    "bôa": {
-      "albums": [
+          "date_added": "2026-02-03T13:57:34.275Z",
+          "last_updated": "2026-02-03T13:57:34.275Z"
+        },
         {
-          "name": "Twilight",
-          "link": "https://music.apple.com/ro/album/1596227761",
-          "tracks": [
-            1
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.748Z",
-          "last_updated": "2026-01-28T12:19:13.299Z"
-        }
-      ],
-      "eps": [],
-      "singles": []
-    },
-    "DROELOE": {
-      "albums": [
-        {
-          "name": "A Matter of Perspective",
-          "link": "https://music.apple.com/ro/album/1534953685",
-          "tracks": [
-            2,
-            3
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.748Z",
-          "last_updated": "2026-01-28T12:19:13.299Z"
-        }
-      ],
-      "eps": [],
-      "singles": [
-        {
-          "name": "zZz - Single",
-          "link": "https://music.apple.com/ro/album/1861614791",
-          "tracks": [
-            1
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.748Z",
-          "last_updated": "2026-01-28T12:19:13.299Z"
-        }
-      ]
-    },
-    "YUQI": {
-      "albums": [
-        {
-          "name": "YUQ1",
-          "link": "https://music.apple.com/ro/album/1801727244",
+          "name": "LOVE DIVE - Single",
+          "link": "https://music.apple.com/ro/album/1616804151",
           "tracks": [
             1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7
+            2
           ],
           "formats": [
-            "hires"
+            "hires",
+            "atmos"
           ],
-          "date_added": "2026-01-27T14:12:44.748Z",
-          "last_updated": "2026-01-28T12:19:13.299Z"
-        }
-      ],
-      "eps": [],
-      "singles": []
-    },
-    "Yves": {
-      "albums": [
+          "date_added": "2026-02-03T13:57:34.275Z",
+          "last_updated": "2026-02-03T13:57:34.275Z"
+        },
         {
-          "name": "I Did: Bloom (Deluxe)",
-          "link": "https://music.apple.com/ro/album/1789315053",
+          "name": "After LIKE - Single",
+          "link": "https://music.apple.com/ro/album/1639416895",
           "tracks": [
+            1,
+            2
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.275Z",
+          "last_updated": "2026-02-03T13:57:34.275Z"
+        },
+        {
+          "name": "ELEVEN -Japanese version- - Single",
+          "link": "https://music.apple.com/ro/album/1649467561",
+          "tracks": [
+            1,
             2
           ],
           "formats": [
             "hires"
           ],
-          "date_added": "2026-01-27T14:12:44.748Z",
-          "last_updated": "2026-01-28T12:19:13.300Z"
-        }
-      ],
-      "eps": [
+          "date_added": "2026-02-03T13:57:34.275Z",
+          "last_updated": "2026-02-03T13:57:34.275Z"
+        },
         {
-          "name": "Soft Error - EP",
-          "link": "https://music.apple.com/ro/album/1827426894",
+          "name": "LOVE DIVE -Japanese version- - Single",
+          "link": "https://music.apple.com/ro/album/1661336207",
           "tracks": [
             1
           ],
           "formats": [
             "hires"
           ],
-          "date_added": "2026-01-27T14:12:44.748Z",
-          "last_updated": "2026-01-28T12:19:13.300Z"
-        }
-      ],
-      "singles": []
-    },
-    "Vanete": {
-      "albums": [],
-      "eps": [
-        {
-          "name": "Sincerely, Vanete - EP",
-          "link": "https://music.apple.com/ro/album/1498837801",
-          "tracks": [
-            4,
-            5,
-            6
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.748Z",
-          "last_updated": "2026-01-28T12:19:13.300Z"
-        }
-      ],
-      "singles": []
-    },
-    "VOILÀ": {
-      "albums": [
-        {
-          "name": "Happy Never After",
-          "link": "https://music.apple.com/ro/album/1660333189",
-          "tracks": [
-            4,
-            8,
-            11
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.748Z",
-          "last_updated": "2026-01-28T12:19:13.300Z"
+          "date_added": "2026-02-03T13:57:34.276Z",
+          "last_updated": "2026-02-03T13:57:34.276Z"
         },
         {
-          "name": "Glass Half Empty (Part II)",
-          "link": "https://music.apple.com/ro/album/1769055165",
-          "tracks": [
-            6
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.748Z",
-          "last_updated": "2026-01-28T12:19:13.300Z"
-        },
-        {
-          "name": "The Last Laugh",
-          "link": "https://music.apple.com/ro/album/1866958950",
-          "tracks": [
-            3
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.748Z",
-          "last_updated": "2026-01-28T12:19:13.300Z"
-        }
-      ],
-      "eps": [],
-      "singles": []
-    },
-    "VALORANT Music": {
-      "albums": [
-        {
-          "name": "VALORANT Sounds, Vol. 1",
-          "link": "https://music.apple.com/ro/album/1833131982",
-          "tracks": [
-            4,
-            8,
-            10
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.749Z",
-          "last_updated": "2026-01-28T12:19:13.300Z"
-        }
-      ],
-      "eps": [],
-      "singles": []
-    },
-    "updog": {
-      "albums": [
-        {
-          "name": "balloon boy",
-          "link": "https://music.apple.com/ro/album/1531863917",
-          "tracks": [
-            5
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.749Z",
-          "last_updated": "2026-01-28T12:19:13.301Z"
-        },
-        {
-          "name": "bouncy boy",
-          "link": "https://music.apple.com/ro/album/1536131841",
-          "tracks": [
-            2
-          ],
-          "formats": [
-            "hires"
-          ],
-          "date_added": "2026-01-27T14:12:44.749Z",
-          "last_updated": "2026-01-28T12:19:13.301Z"
-        }
-      ],
-      "eps": [],
-      "singles": [
-        {
-          "name": "3000 - Single",
-          "link": "https://music.apple.com/ro/album/1532229207",
+          "name": "Kitsch - Single",
+          "link": "https://music.apple.com/ro/album/1677260537",
           "tracks": [
             1
           ],
           "formats": [
-            "hires"
+            "hires",
+            "atmos"
           ],
-          "date_added": "2026-01-27T14:12:44.749Z",
-          "last_updated": "2026-01-28T12:19:13.301Z"
+          "date_added": "2026-02-03T13:57:34.276Z",
+          "last_updated": "2026-02-03T13:57:34.276Z"
+        },
+        {
+          "name": "I WANT - Single",
+          "link": "https://music.apple.com/ro/album/1697073400",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.276Z",
+          "last_updated": "2026-02-03T13:57:34.276Z"
+        },
+        {
+          "name": "Either Way - Single",
+          "link": "https://music.apple.com/ro/album/1708301471",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.276Z",
+          "last_updated": "2026-02-03T13:57:34.276Z"
+        },
+        {
+          "name": "Off The Record - Single",
+          "link": "https://music.apple.com/ro/album/1709570212",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.276Z",
+          "last_updated": "2026-02-03T13:57:34.276Z"
+        },
+        {
+          "name": "Will - Single",
+          "link": "https://music.apple.com/ro/album/1738429597",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.276Z",
+          "last_updated": "2026-02-03T13:57:34.276Z"
+        },
+        {
+          "name": "SUMMER FESTA - Single",
+          "link": "https://music.apple.com/ro/album/1753673713",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.277Z",
+          "last_updated": "2026-02-03T13:57:34.277Z"
+        },
+        {
+          "name": "CRUSH - Single",
+          "link": "https://music.apple.com/ro/album/1759319680",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.277Z",
+          "last_updated": "2026-02-03T13:57:34.277Z"
+        },
+        {
+          "name": "Will -Korean version- - Single",
+          "link": "https://music.apple.com/ro/album/1771372465",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.277Z",
+          "last_updated": "2026-02-03T13:57:34.277Z"
+        },
+        {
+          "name": "REBEL HEART - Single",
+          "link": "https://music.apple.com/ro/album/1786710182",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.277Z",
+          "last_updated": "2026-02-03T13:57:34.277Z"
+        },
+        {
+          "name": "DARE ME - Single",
+          "link": "https://music.apple.com/ro/album/1807245048",
+          "tracks": [
+            1
+          ],
+          "formats": [
+            "hires",
+            "atmos"
+          ],
+          "date_added": "2026-02-03T13:57:34.277Z",
+          "last_updated": "2026-02-03T13:57:34.277Z"
         }
       ]
     },
-    "Rosie Darling & Boy In Space": {
+    "IVE & Saweetie": {
       "albums": [],
       "eps": [],
       "singles": [
         {
-          "name": "Nail In The Coffin - Single",
-          "link": "https://music.apple.com/ro/album/1678433190",
+          "name": "All Night - Single",
+          "link": "https://music.apple.com/ro/album/1724240361",
           "tracks": [
             1
           ],
           "formats": [
-            "hires"
+            "hires",
+            "atmos"
           ],
-          "date_added": "2026-01-27T14:12:44.749Z",
-          "last_updated": "2026-01-28T12:19:13.301Z"
+          "date_added": "2026-02-03T13:57:34.276Z",
+          "last_updated": "2026-02-03T13:57:34.276Z"
         }
       ]
     }

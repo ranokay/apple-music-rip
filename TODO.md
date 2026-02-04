@@ -1,43 +1,5 @@
 # TODOs for Apple Music Downloader
 
-- Lyrics-only downloads (--lyrics-only)
-  - Adds a dedicated mode that only fetches lyrics (no audio).
-  - Uses existing config flags save-lrc-file and embed-lrc (embed is skipped in lyrics-only because there’s no audio file).
-  - Saves the .lrc/.ttml with the same filename format as audio so it matches track naming. (e.g. “01 - Song Title.ttml”)
-- Covers-only downloads (--covers-only)
-  - Album-level covers-only path that saves album cover (and optionally artist cover) then exits without downloading tracks.
-  - Playlist-level covers-only path that only writes the album cover (per album when derived from playlist tracks) and skips audio.
-  - Ensures covers are not downloaded in lyrics-only mode.
-- Preview mode (--preview)
-  - Outputs JSON metadata for album/playlist/song with track list, used by the web UI for selection.
-  - Supports ?i= preselection for album links; song previews auto-preselect track 1.
-- CLI track selection (--select-tracks)
-  - Accepts comma/range selections (1,2,5-7) and forces selection mode even without interactive prompts.
-  - Works for albums and playlists; integrates with existing --select logic.
-- Stop signal handling (stop.signal)
-  - Clears stale stop file at startup.
-  - Checks for stop requests during queues, album/playlist loops, and per-track processing.
-  - Gracefully aborts with user message and cleanup.
-- Download history output (HISTORY: lines)
-  - Emits structured history JSON per track (artist, album, release type, IDs, track number).
-  - Also emits history when a track is already on disk (original or converted) so history stays consistent.
-- Release-type detection + foldering
-  - Adds EP/single detection using Apple metadata and heuristics.
-  - Routes albums into Albums/, EPs/, Singles/ subfolders.
-- Atmos availability gating
-  - Checks master manifest for Atmos codec before download; skips unsupported tracks early.
-  - Prevents cover/lyrics work on Atmos-only requests when not available.
-- Atmos folder suffix
-  - Appends “(Dolby Atmos)” to album/ep/single folder names when Atmos is selected.
-- Playlist album/artist grouping
-  - For playlists, tracks are reorganized into per-artist/per-album folders, instead of dumping into a flat playlist folder, similar to how albums are structured, and without playlist name in the path.
-  - Uses album metadata when available for accurate artist/album names.
-- Improved tag writing for multi-artist (collaborative) tracks
-  - Forces AlbumArtist tag to the primary artist for consistent library grouping. (e.g AlbumArtist=Alan Walker, Artist=Alan Walker, SORANA; AlbumArtist=Hearts & Colors, Artist=Hearts & Colors & DREAMDNVR)
-  - Removes redundant artist names from Title tag. (e.g. Title="Song Title (feat. XXX)" → Title="Song Title")
-  - Replaces “&” with “,” in all tags for consistent multi-artist separation based on arist names, e.g. `Alan Walker & SORANA` → `Alan Walker, SORANA`; but for `Hearts & Colors & DREAMDNVR` → `Hearts & Colors, DREAMDNVR`. This helps some players (Symfonium, Navidrome, Subsonic based players etc.) that use comma as multi-artist separator.
-  - Add `ALBUMVERSION: Dolby Atmos` tag to indicate Atmos tracks, useful for players to filter Atmos content.
-
 ## utility scripts
 
 - **scripts/dedupe_music.py — duplicate detection & cleanup**:

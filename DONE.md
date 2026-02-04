@@ -1,19 +1,40 @@
-# DONE
+# Progress Tracker
 
-- Preview mode (--preview) with album/playlist/song metadata and preselection
-- Lyrics-only mode (--lyrics-only) with skip logic and safe reuse of existing lyrics
-- Covers-only mode (--covers-only) for album/playlist cover downloads
-- CLI track selection (--select-tracks) parsing for albums/playlists
-- Stop signal handling (stop.signal) across queue/album/playlist/track loops
-- Non-interactive retry abort + wrapper connection-refused detection
-- Release-type routing (Albums/EPs/Singles) + Dolby Atmos folder suffix
-- Playlist album/artist grouping (no playlist-name paths)
-- Atmos availability gating + ALBUMVERSION tag for Atmos tracks
-- Cover & lyrics sibling reuse across formats
-- Structured HISTORY JSON output per track (including existing files)
-- Web UI/API improvements: clearer preview JSON errors and release info in modal
-- CoreAudio (afconvert) ALAC -> FLAC conversion option on macOS
+## Feature Checklist
 
-Skipped for now (per request):
+- [ ] CLI flags: `--preview`, `--select-tracks`, `--lyrics-only`, `--covers-only` (validated)
+- [ ] Preview JSON output for album/playlist/song (validated)
+- [ ] Release-type detection + folder routing (validated)
+- [ ] Playlist album/artist grouping (validated)
+- [ ] Track selection parsing + non-interactive behavior (validated)
+- [ ] Audio → lyrics → covers ordering (validated)
+- [ ] Lyrics-only flow with fallback language + reuse (validated)
+- [ ] Covers-only flow with Atmos-only animated artwork (validated)
+- [ ] Asset reuse across formats (covers/lyrics) (validated)
+- [ ] Atmos gating + Atmos tagging (validated)
+- [ ] Stop signal handling + wrapper refusal retry abort (validated)
+- [ ] HISTORY emission for successes + already-existing tracks (validated)
+- [ ] Web UI alignment + responsive overflow updates (validated)
+- [ ] Remove unused UI component(s) (validated)
 
-- Tagging & Metadata Improvements
+## Tests Run
+
+- [ ] `go test ./...` (fails: module import `main` not importable in this environment)
+- [x] `bun run build` (apps/web)
+
+## Manual Verification Checklist
+
+- [ ] Preview outputs valid JSON for album/playlist/song URLs
+- [ ] `--select-tracks` downloads only requested tracks
+- [ ] `--lyrics-only` writes lyric files and skips audio
+- [ ] `--covers-only` writes album covers and skips audio
+- [ ] Atmos-only requests skip non-Atmos tracks before downloads
+- [ ] Stop signal exits between queue items and tracks
+- [ ] `HISTORY:` lines emitted for existing and new tracks
+- [ ] Playlist downloads grouped into artist/album folders
+- [ ] Playlist folders include release year from album metadata
+- [ ] Playlist downloads use album track numbers (not playlist order)
+- [ ] Playlist downloads save artist covers when enabled
+- [ ] Atmos-only/lyrics/covers skip albums without matching formats (no empty folders)
+- [ ] Covers/lyrics multi-format honors selected formats
+- [ ] UI renders cleanly on mobile/tablet/desktop; logs wrap

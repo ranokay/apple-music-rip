@@ -23,6 +23,7 @@ const AMD_DIR = path.join(APPS_ROOT, "apple-music-downloader");
 const CONFIG_PATH = path.join(AMD_DIR, "config.yaml");
 const DOWNLOAD_HISTORY_FILE = path.join(APPS_ROOT, "download_history.json");
 const DIST_DIR = path.join(WEB_ROOT, "dist");
+const WRAPPER_CONTAINER_NAMES = ["wrapper"];
 
 const DEFAULT_BROWSE_DIR =
 	process.env.AMR_DEFAULT_DIR || path.join(os.homedir(), "Downloads");
@@ -35,6 +36,7 @@ const downloaderLogs: string[] = [];
 let downloadProcess: ChildProcessWithoutNullStreams | null = null;
 let downloadRunning = false;
 let lastWrapperLogCount = 0;
+let lastWrapperContainer: string | null = null;
 let lastDownloadMilestone = -1;
 let lastDecryptMilestone = -1;
 let currentProgress = { label: "", percent: 0, details: "" };
@@ -223,28 +225,41 @@ function saveCollectedHistoryEntries() {
 
 function getWrapperLogs() {
 	try {
-		const result = spawnSync("docker", ["logs", "wrapper-runtime"], {
-			encoding: "utf-8",
-			timeout: 5000,
-		});
+		for (const name of WRAPPER_CONTAINER_NAMES) {
+			const result = spawnSync("docker", ["logs", name], {
+				encoding: "utf-8",
+				timeout: 5000,
+			});
 
-		if (result.error?.name === "ETIMEDOUT") {
-			appendLog(wrapperLogs, "⚠️ Timeout getting wrapper logs");
-			return false;
-		}
-
-		if (result.stdout) {
-			const allLines = result.stdout.trim().split("\n");
-			if (allLines.length > lastWrapperLogCount) {
-				const newLines = allLines.slice(lastWrapperLogCount);
-				newLines.forEach((line) => {
-					if (line.trim()) appendLog(wrapperLogs, line.trim());
-				});
-				lastWrapperLogCount = allLines.length;
+			if (result.error?.name === "ETIMEDOUT") {
+				appendLog(wrapperLogs, "⚠️ Timeout getting wrapper logs");
+				return false;
 			}
+
+			if (result.status !== 0) {
+				continue;
+			}
+
+			if (name !== lastWrapperContainer) {
+				lastWrapperContainer = name;
+				lastWrapperLogCount = 0;
+			}
+
+			if (result.stdout) {
+				const allLines = result.stdout.trim().split("\n");
+				if (allLines.length > lastWrapperLogCount) {
+					const newLines = allLines.slice(lastWrapperLogCount);
+					newLines.forEach((line) => {
+						if (line.trim()) appendLog(wrapperLogs, line.trim());
+					});
+					lastWrapperLogCount = allLines.length;
+				}
+			}
+
+			return true;
 		}
 
-		return true;
+		return false;
 	} catch {
 		return false;
 	}
@@ -278,16 +293,21 @@ function wrapperHostPort() {
 
 function checkDockerWrapperRunning() {
 	try {
-		const result = spawnSync(
-			"docker",
-			["inspect", "-f", "{{.State.Running}}", "wrapper-runtime"],
-			{ encoding: "utf-8", timeout: 2000 },
-		);
-		if (result.error || result.status !== 0) return null;
-		const state = result.stdout.trim().toLowerCase();
-		if (state === "true") return true;
-		if (state === "false") return false;
-		return null;
+		let sawStopped = false;
+		for (const name of WRAPPER_CONTAINER_NAMES) {
+			const result = spawnSync(
+				"docker",
+				["inspect", "-f", "{{.State.Running}}", name],
+				{ encoding: "utf-8", timeout: 2000 },
+			);
+			if (result.error || result.status !== 0) {
+				continue;
+			}
+			const state = result.stdout.trim().toLowerCase();
+			if (state === "true") return true;
+			if (state === "false") sawStopped = true;
+		}
+		return sawStopped ? false : null;
 	} catch {
 		return null;
 	}
@@ -468,13 +488,7 @@ async function runSingleDownload(
 
 	let cmd = ["go", "run", "main.go", link];
 
-	if (downloadMode === "lyrics") {
-		cmd = ["go", "run", "main.go", "--lyrics-only", link];
-		appendLog(downloaderLogs, `🎵 Starting lyrics-only download: ${link}`);
-	} else if (downloadMode === "covers") {
-		cmd = ["go", "run", "main.go", "--covers-only", link];
-		appendLog(downloaderLogs, `🎵 Starting covers-only download: ${link}`);
-	} else if (formatChoice === "atmos") {
+	if (formatChoice === "atmos") {
 		cmd = ["go", "run", "main.go", "--atmos", link];
 		appendLog(downloaderLogs, `🎵 Starting ATMOS download: ${link}`);
 	} else if (formatChoice === "aac") {
@@ -484,6 +498,26 @@ async function runSingleDownload(
 		appendLog(downloaderLogs, `🎵 Starting Hi-Res Lossless download: ${link}`);
 	} else {
 		appendLog(downloaderLogs, `🎵 Starting Lossless download: ${link}`);
+	}
+
+	if (downloadMode === "lyrics") {
+		cmd = [
+			cmd[0],
+			cmd[1],
+			cmd[2],
+			"--lyrics-only",
+			...cmd.slice(3),
+		];
+		appendLog(downloaderLogs, `🎵 Starting lyrics-only download: ${link}`);
+	} else if (downloadMode === "covers") {
+		cmd = [
+			cmd[0],
+			cmd[1],
+			cmd[2],
+			"--covers-only",
+			...cmd.slice(3),
+		];
+		appendLog(downloaderLogs, `🎵 Starting covers-only download: ${link}`);
 	}
 
 	if (selectedTracks) {
@@ -790,6 +824,13 @@ app
 			download_running: downloadRunning,
 			progress: currentProgress,
 		};
+	})
+	.post("/api/clear-logs", () => {
+		wrapperLogs.length = 0;
+		downloaderLogs.length = 0;
+		currentProgress = { label: "", percent: 0, details: "" };
+
+		return { status: "ok" };
 	})
 	.post("/api/preview", async ({ body }) => {
 		const link = (body as Record<string, string> | undefined)?.link?.trim();

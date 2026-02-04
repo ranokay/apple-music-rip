@@ -19,7 +19,7 @@ The web app replaces the old Flask UI and talks directly to the downloader and w
 
 1. Build/run the wrapper runtime and sign in.
    - Follow the instructions in `apps/wrapper`.
-   - The web app expects the container to be named `wrapper-runtime`.
+   - The web app expects the container to be named `wrapper`.
 2. Configure the downloader.
    - Edit `apps/apple-music-downloader/config.yaml` for tokens, folders, etc.
 3. Run the web app.

@@ -179,9 +179,17 @@ const SECTIONS: Section[] = [
 				type: "switch",
 			},
 			{
+				id: "save-cover-file",
+				label: "Save Cover File",
+				type: "switch",
+				helper:
+					"Writes album/playlist cover images to disk. Embedding may still create a cover file.",
+			},
+			{
 				id: "save-artist-cover",
 				label: "Save Artist Cover",
 				type: "switch",
+				helper: "Uses the cover size/format above.",
 			},
 			{
 				id: "save-animated-artwork",
@@ -328,16 +336,21 @@ const SECTIONS: Section[] = [
 				defaultValues: ["lossless", "hires", "aac"],
 			},
 			{
-				id: "convert-coreaudio-alac",
-				label: "Use CoreAudio for ALAC → FLAC (macOS)",
-				type: "switch",
-				helper:
-					"macOS only. Uses afconvert + ffmpeg to avoid ALAC decode cutoffs.",
-			},
-			{
 				id: "convert-keep-original",
 				label: "Keep Original",
 				type: "switch",
+			},
+			{
+				id: "convert-warn-lossy-to-lossless",
+				label: "Warn on Lossy to Lossless",
+				type: "switch",
+				helper: "Show a warning when converting lossy sources to lossless.",
+			},
+			{
+				id: "convert-skip-lossy-to-lossless",
+				label: "Skip Lossy to Lossless",
+				type: "switch",
+				helper: "Skip converting lossy sources to lossless outputs.",
 			},
 			{
 				id: "convert-skip-if-source-matches",
@@ -386,6 +399,7 @@ const SECTIONS: Section[] = [
 				label: "M3U8 Mode",
 				type: "select",
 				options: [
+					{ value: "web", label: "Web Only" },
 					{ value: "hires", label: "Hi-Res Only" },
 					{ value: "all", label: "All" },
 				],
@@ -494,6 +508,11 @@ export default function SettingsApp() {
 
 	const renderField = (field: Field) => {
 		const value = config[field.id];
+		const useMono =
+			field.id.includes("folder") ||
+			field.id.includes("path") ||
+			field.id.includes("format");
+		const inputClassName = useMono ? "font-mono text-xs" : "";
 
 		if (field.type === "switch") {
 			return (
@@ -580,6 +599,7 @@ export default function SettingsApp() {
 				{field.type === "textarea" ? (
 					<Textarea
 						id={field.id}
+						className={`min-h-[96px] ${inputClassName}`}
 						value={String(value ?? "")}
 						placeholder={field.placeholder}
 						onChange={(event) => updateValue(field.id, event.target.value)}
@@ -604,6 +624,7 @@ export default function SettingsApp() {
 					<Input
 						id={field.id}
 						type={field.type}
+						className={inputClassName}
 						value={value === undefined || value === null ? "" : String(value)}
 						placeholder={field.placeholder}
 						onChange={(event) => updateValue(field.id, event.target.value)}
@@ -620,7 +641,7 @@ export default function SettingsApp() {
 
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-amber-50 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100">
-			<div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 pb-16 pt-10">
+			<div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-6 pb-16 pt-10">
 				<header className="flex flex-wrap items-start justify-between gap-4">
 					<div>
 						<p className="text-sm uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500">
@@ -687,7 +708,7 @@ export default function SettingsApp() {
 					</Card>
 				) : (
 					<Tabs defaultValue={sectionIds[0]} className="w-full">
-						<TabsList className="flex flex-wrap justify-start">
+						<TabsList className="flex flex-wrap justify-start gap-2">
 							{SECTIONS.map((section) => (
 								<TabsTrigger
 									key={section.id}

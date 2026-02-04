@@ -7,6 +7,7 @@ import {
 	Search,
 	Settings,
 	Sparkles,
+	Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ThemeToggle from "@/components/app/ThemeToggle";
@@ -104,8 +105,6 @@ type FolderEntry = {
 	path: string;
 };
 
-const defaultProgress = { label: "", percent: 0, details: "" };
-
 function isNearBottom(container: HTMLDivElement | null) {
 	if (!container) return true;
 	return (
@@ -136,14 +135,6 @@ function formatDownloaderLog(line: string) {
 	return "text-slate-700 dark:text-slate-300";
 }
 
-function formatWrapperLog(line: string) {
-	if (line.includes("✅")) return "text-emerald-600 dark:text-emerald-400";
-	if (line.includes("❌") || line.toLowerCase().includes("error"))
-		return "text-rose-600 dark:text-rose-400";
-	if (line.includes("⚠️")) return "text-amber-600 dark:text-amber-400";
-	return "text-slate-700 dark:text-slate-300";
-}
-
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 	const res = await fetch(url, {
 		headers: { "Content-Type": "application/json" },
@@ -157,10 +148,8 @@ export default function App() {
 	const [mode, setMode] = useState<"audio" | "lyrics" | "covers">("audio");
 	const [wrapperRunning, setWrapperRunning] = useState(false);
 	const [downloadRunning, setDownloadRunning] = useState(false);
-	const [progress, setProgress] = useState(defaultProgress);
 	const [verbose, setVerbose] = useState(true);
 	const [downloaderLogs, setDownloaderLogs] = useState<string[]>([]);
-	const [wrapperLogs, setWrapperLogs] = useState<string[]>([]);
 	const [previewData, setPreviewData] = useState<PreviewData | null>(null);
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [trackFilter, setTrackFilter] = useState("");
@@ -202,7 +191,6 @@ export default function App() {
 	);
 
 	const downloaderRef = useRef<HTMLDivElement | null>(null);
-	const wrapperRef = useRef<HTMLDivElement | null>(null);
 
 	const filteredDownloaderLogs = useMemo(() => {
 		if (verbose) return downloaderLogs;
@@ -290,21 +278,15 @@ export default function App() {
 				const data = await fetchJson<LogsPayload>("/api/get-logs");
 				if (!mounted) return;
 				const shouldScrollDownloader = isNearBottom(downloaderRef.current);
-				const shouldScrollWrapper = isNearBottom(wrapperRef.current);
 
 				setDownloaderLogs(data.downloader ?? []);
-				setWrapperLogs(data.wrapper ?? []);
 				setWrapperRunning(data.wrapper_running);
 				setDownloadRunning(data.download_running);
-				setProgress(data.progress ?? defaultProgress);
 
 				requestAnimationFrame(() => {
 					if (shouldScrollDownloader && downloaderRef.current) {
 						downloaderRef.current.scrollTop =
 							downloaderRef.current.scrollHeight;
-					}
-					if (shouldScrollWrapper && wrapperRef.current) {
-						wrapperRef.current.scrollTop = wrapperRef.current.scrollHeight;
 					}
 				});
 			} catch {
@@ -325,6 +307,17 @@ export default function App() {
 		const timeout = setTimeout(() => setStatusMessage(null), 4000);
 		return () => clearTimeout(timeout);
 	}, [statusMessage]);
+
+	const handleClearLogs = async () => {
+		setDownloaderLogs([]);
+		try {
+			await fetchJson<{ status: string }>("/api/clear-logs", {
+				method: "POST",
+			});
+		} catch {
+			// ignore
+		}
+	};
 
 	const handleSearch = async () => {
 		if (!link.trim()) {
@@ -381,10 +374,12 @@ export default function App() {
 
 		setQualityError(false);
 		setTrackError("");
+		const effectiveFormats =
+			formats.length > 0 ? formats : (["lossless"] as string[]);
 
 		const payload = {
 			link,
-			formats: mode === "audio" ? formats : ["lossless"],
+			formats: effectiveFormats,
 			mode,
 			select_tracks: selectedNums.join(","),
 			artist: previewData?.artist ?? "",
@@ -536,7 +531,7 @@ export default function App() {
 					<div className="absolute right-0 top-20 h-72 w-72 rounded-full bg-orange-200/50 blur-3xl dark:bg-amber-500/10" />
 				</div>
 
-				<div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 pb-16 pt-10">
+				<div className="relative mx-auto flex w-full max-w-7xl flex-col gap-6 px-6 pb-16 pt-10">
 					<header className="flex flex-col gap-4">
 						<div className="flex flex-wrap items-center justify-between gap-4">
 							<div>
@@ -569,6 +564,37 @@ export default function App() {
 										Settings
 									</a>
 								</Button>
+								<div className="relative group">
+									<Button
+										variant="outline"
+										size="icon"
+										className="h-9 w-9"
+										aria-label="Quick tips"
+									>
+										<Info className="h-4 w-4" />
+									</Button>
+									<div className="pointer-events-none absolute right-0 top-full z-20 mt-2 w-80 translate-y-2 rounded-2xl border border-slate-200 bg-white/95 p-4 text-slate-700 opacity-0 shadow-xl transition-all duration-150 group-hover:translate-y-0 group-hover:opacity-100 dark:border-slate-800 dark:bg-slate-950/95 dark:text-slate-200">
+										<p className="text-sm font-semibold">Quick tips</p>
+										<div className="mt-3 space-y-3 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+											<p>
+												Run the wrapper container and sign in before starting
+												downloads.
+											</p>
+											<p>
+												Lyrics-only and Covers-only still use track selection to
+												target releases.
+											</p>
+											<p>
+												Hi-Res is the default quality. Toggle more formats in
+												the selection modal.
+											</p>
+											<p>
+												Save paths can be customized in Settings without
+												stopping the UI.
+											</p>
+										</div>
+									</div>
+								</div>
 							</div>
 						</div>
 
@@ -579,7 +605,7 @@ export default function App() {
 						) : null}
 					</header>
 
-					<section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+					<section className="grid gap-6">
 						<div className="flex flex-col gap-6">
 							<Card className="border-slate-200/60 shadow-sm dark:border-slate-800/80 dark:bg-slate-950/40">
 								<CardHeader>
@@ -600,6 +626,8 @@ export default function App() {
 											placeholder="https://music.apple.com/..."
 											value={link}
 											onChange={(event) => setLink(event.target.value)}
+											spellCheck={false}
+											autoCapitalize="off"
 										/>
 									</div>
 
@@ -648,7 +676,7 @@ export default function App() {
 										</RadioGroup>
 									</div>
 
-									<div className="flex flex-wrap gap-3">
+									<div className="flex flex-wrap gap-3 self-end">
 										<Button
 											className="gap-2"
 											onClick={handleSearch}
@@ -694,7 +722,7 @@ export default function App() {
 												</Label>
 												<div className="flex gap-2">
 													<Input
-														className="flex-1"
+														className="flex-1 font-mono text-xs"
 														value={folders.alac}
 														onChange={(event) =>
 															updateFolderField("alac", event.target.value)
@@ -715,7 +743,7 @@ export default function App() {
 												</Label>
 												<div className="flex gap-2">
 													<Input
-														className="flex-1"
+														className="flex-1 font-mono text-xs"
 														value={folders.atmos}
 														onChange={(event) =>
 															updateFolderField("atmos", event.target.value)
@@ -736,7 +764,7 @@ export default function App() {
 												</Label>
 												<div className="flex gap-2">
 													<Input
-														className="flex-1"
+														className="flex-1 font-mono text-xs"
 														value={folders.aac}
 														onChange={(event) =>
 															updateFolderField("aac", event.target.value)
@@ -775,32 +803,22 @@ export default function App() {
 										<div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
 											<span>Verbose</span>
 											<Switch checked={verbose} onCheckedChange={setVerbose} />
+											<Button
+												variant="outline"
+												size="sm"
+												className="gap-2 text-xs"
+												onClick={handleClearLogs}
+											>
+												<Trash2 className="h-3.5 w-3.5" />
+												Clear logs
+											</Button>
 										</div>
-									</div>
-									<div className="rounded-xl border border-slate-200 bg-white/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/70">
-										<div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-											<span>{progress.label || "Waiting for a download"}</span>
-											<span>{progress.percent.toFixed(0)}%</span>
-										</div>
-										<div className="mt-2 h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800/70">
-											<div
-												className="h-2 rounded-full bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 transition-all"
-												style={{
-													width: `${Math.min(100, Math.max(0, progress.percent))}%`,
-												}}
-											/>
-										</div>
-										{progress.details ? (
-											<p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-												{progress.details}
-											</p>
-										) : null}
 									</div>
 								</CardHeader>
 								<CardContent>
 									<div
 										ref={downloaderRef}
-										className="h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-xs dark:border-slate-800 dark:bg-slate-950/60"
+										className="h-[min(38vh,20rem)] min-h-[12rem] overflow-y-auto rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-xs dark:border-slate-800 dark:bg-slate-950/60"
 										style={{ fontFamily: "var(--font-mono)" }}
 									>
 										{filteredDownloaderLogs.length === 0 ? (
@@ -811,77 +829,12 @@ export default function App() {
 											filteredDownloaderLogs.map((line, index) => (
 												<div
 													key={`${line}-${index}`}
-													className={`py-1 ${formatDownloaderLog(line)}`}
+													className={`py-1 whitespace-pre-wrap break-words ${formatDownloaderLog(line)}`}
 												>
 													&gt; {line}
 												</div>
 											))
 										)}
-									</div>
-								</CardContent>
-							</Card>
-						</div>
-
-						<div className="flex flex-col gap-6">
-							<Card className="border-slate-200/60 dark:border-slate-800/80 dark:bg-slate-950/40">
-								<CardHeader>
-									<CardTitle className="text-base">Wrapper Signals</CardTitle>
-									<CardDescription>
-										Keep an eye on the runtime container.
-									</CardDescription>
-								</CardHeader>
-								<CardContent>
-									<div
-										ref={wrapperRef}
-										className="h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-xs dark:border-slate-800 dark:bg-slate-950/60"
-										style={{ fontFamily: "var(--font-mono)" }}
-									>
-										{wrapperLogs.length === 0 ? (
-											<div className="text-slate-400 dark:text-slate-500">
-												No wrapper logs yet.
-											</div>
-										) : (
-											wrapperLogs.map((line, index) => (
-												<div
-													key={`${line}-${index}`}
-													className={`py-1 ${formatWrapperLog(line)}`}
-												>
-													&gt; {line}
-												</div>
-											))
-										)}
-									</div>
-								</CardContent>
-							</Card>
-
-							<Card className="border-slate-200/60 bg-slate-950 text-slate-100 dark:border-slate-800/80 dark:bg-slate-900">
-								<CardHeader>
-									<CardTitle className="flex items-center gap-2 text-base">
-										<Info className="h-4 w-4 text-amber-300 dark:text-amber-200" />
-										Quick tips
-									</CardTitle>
-								</CardHeader>
-								<CardContent className="space-y-3 text-sm text-slate-200">
-									<div className="flex gap-3">
-										<div className="mt-1 h-2 w-2 rounded-full bg-amber-300" />
-										<p>
-											Run the wrapper container and sign in before starting
-											downloads.
-										</p>
-									</div>
-									<div className="flex gap-3">
-										<div className="mt-1 h-2 w-2 rounded-full bg-amber-300" />
-										<p>
-											Hi-Res is the default quality. Toggle more formats in the
-											selection modal.
-										</p>
-									</div>
-									<div className="flex gap-3">
-										<div className="mt-1 h-2 w-2 rounded-full bg-amber-300" />
-										<p>
-											Save paths can be customized in Settings without stopping
-											the UI.
-										</p>
 									</div>
 								</CardContent>
 							</Card>
@@ -891,7 +844,7 @@ export default function App() {
 			</div>
 
 			<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-				<DialogContent className="max-w-4xl dark:border-slate-800 dark:bg-slate-950/95">
+				<DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto dark:border-slate-800 dark:bg-slate-950/95">
 					<DialogHeader>
 						<DialogTitle className="text-xl">Select tracks</DialogTitle>
 						<DialogDescription>
@@ -917,11 +870,11 @@ export default function App() {
 							<div className="flex items-start justify-between gap-4">
 								<div>
 									<p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-										Audio qualities
+										Formats
 									</p>
 									<p className="text-xs text-slate-500 dark:text-slate-400">
-										Conversion follows your Settings (choose which formats to
-										convert).
+										Formats apply to audio, covers, and lyrics. If none are
+										selected, we default to Lossless.
 									</p>
 								</div>
 								<Badge
@@ -940,13 +893,11 @@ export default function App() {
 											selectedQualities[quality.id]
 												? "border-amber-300 bg-amber-50 dark:border-amber-500/50 dark:bg-amber-500/10"
 												: "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"
-										} ${mode !== "audio" ? "opacity-50" : ""}`}
+										}`}
 									>
 										<Checkbox
 											checked={selectedQualities[quality.id]}
-											onCheckedChange={() =>
-												mode === "audio" && toggleQuality(quality.id)
-											}
+											onCheckedChange={() => toggleQuality(quality.id)}
 										/>
 										<div>
 											<div className="flex items-center gap-2">
@@ -1008,7 +959,7 @@ export default function App() {
 							<Separator />
 
 							<div
-								className="max-h-[38vh] overflow-y-auto rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-950"
+								className="max-h-[50vh] overflow-y-auto rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-950"
 								style={{ fontFamily: "var(--font-mono)" }}
 							>
 								{filteredTracks.length === 0 ? (
@@ -1019,17 +970,17 @@ export default function App() {
 									filteredTracks.map((track) => (
 										<label
 											key={track.num}
-											className="flex cursor-pointer items-start gap-3 border-b border-slate-100 py-3 last:border-b-0 dark:border-slate-800/70"
+											className="flex min-w-0 cursor-pointer items-start gap-3 border-b border-slate-100 py-3 last:border-b-0 dark:border-slate-800/70"
 										>
 											<Checkbox
 												checked={selectedTracks.has(track.num)}
 												onCheckedChange={() => toggleTrack(track.num)}
 											/>
-											<div>
-												<p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+											<div className="min-w-0">
+												<p className="break-words text-sm font-semibold text-slate-800 dark:text-slate-100">
 													{String(track.num).padStart(2, "0")} — {track.name}
 												</p>
-												<p className="text-xs text-slate-500 dark:text-slate-400">
+												<p className="break-words text-xs text-slate-500 dark:text-slate-400">
 													{track.artist ??
 														previewData?.artist ??
 														"Unknown Artist"}{" "}
@@ -1067,7 +1018,7 @@ export default function App() {
 			</Dialog>
 
 			<Dialog open={folderPickerOpen} onOpenChange={setFolderPickerOpen}>
-				<DialogContent className="max-w-2xl dark:border-slate-800 dark:bg-slate-950/95">
+				<DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto dark:border-slate-800 dark:bg-slate-950/95">
 					<DialogHeader>
 						<DialogTitle className="text-lg">Choose folder</DialogTitle>
 						<DialogDescription>

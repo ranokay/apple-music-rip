@@ -17,3 +17,5 @@ node_modules/
 .vscode/
 apps/wrapper/rootfs/system/
 downloads/
+staging/
+uploaded/
