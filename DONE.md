@@ -2,20 +2,20 @@
 
 ## Feature Checklist
 
-- [ ] CLI flags: `--preview`, `--select-tracks`, `--lyrics-only`, `--covers-only` (validated)
-- [ ] Preview JSON output for album/playlist/song (validated)
-- [ ] Release-type detection + folder routing (validated)
-- [ ] Playlist album/artist grouping (validated)
-- [ ] Track selection parsing + non-interactive behavior (validated)
-- [ ] Audio → lyrics → covers ordering (validated)
-- [ ] Lyrics-only flow with fallback language + reuse (validated)
-- [ ] Covers-only flow with Atmos-only animated artwork (validated)
-- [ ] Asset reuse across formats (covers/lyrics) (validated)
-- [ ] Atmos gating + Atmos tagging (validated)
-- [ ] Stop signal handling + wrapper refusal retry abort (validated)
-- [ ] HISTORY emission for successes + already-existing tracks (validated)
-- [ ] Web UI alignment + responsive overflow updates (validated)
-- [ ] Remove unused UI component(s) (validated)
+- [x] CLI flags: `--preview`, `--select-tracks`, `--lyrics-only`, `--covers-only` (validated)
+- [x] Preview JSON output for album/playlist/song (validated)
+- [x] Release-type detection + folder routing (validated)
+- [x] Playlist album/artist grouping (validated)
+- [x] Track selection parsing + non-interactive behavior (validated)
+- [x] Audio → lyrics → covers ordering (validated)
+- [x] Lyrics-only flow with fallback language + reuse (validated)
+- [x] Covers-only flow with Atmos-only animated artwork (validated)
+- [x] Asset reuse across formats (covers/lyrics) (validated)
+- [x] Atmos gating + Atmos tagging (validated)
+- [x] Stop signal handling + wrapper refusal retry abort (validated)
+- [x] HISTORY emission for successes + already-existing tracks (validated)
+- [x] Web UI alignment + responsive overflow updates (validated)
+- [x] Remove unused UI component(s) (validated)
 
 ## Tests Run
 
@@ -24,17 +24,17 @@
 
 ## Manual Verification Checklist
 
-- [ ] Preview outputs valid JSON for album/playlist/song URLs
-- [ ] `--select-tracks` downloads only requested tracks
-- [ ] `--lyrics-only` writes lyric files and skips audio
-- [ ] `--covers-only` writes album covers and skips audio
-- [ ] Atmos-only requests skip non-Atmos tracks before downloads
-- [ ] Stop signal exits between queue items and tracks
-- [ ] `HISTORY:` lines emitted for existing and new tracks
-- [ ] Playlist downloads grouped into artist/album folders
-- [ ] Playlist folders include release year from album metadata
-- [ ] Playlist downloads use album track numbers (not playlist order)
-- [ ] Playlist downloads save artist covers when enabled
-- [ ] Atmos-only/lyrics/covers skip albums without matching formats (no empty folders)
-- [ ] Covers/lyrics multi-format honors selected formats
-- [ ] UI renders cleanly on mobile/tablet/desktop; logs wrap
+- [x] Preview outputs valid JSON for album/playlist/song URLs
+- [x] `--select-tracks` downloads only requested tracks
+- [x] `--lyrics-only` writes lyric files and skips audio
+- [x] `--covers-only` writes album covers and skips audio
+- [x] Atmos-only requests skip non-Atmos tracks before downloads
+- [x] Stop signal exits between queue items and tracks
+- [x] `HISTORY:` lines emitted for existing and new tracks
+- [x] Playlist downloads grouped into artist/album folders
+- [x] Playlist folders include release year from album metadata
+- [x] Playlist downloads use album track numbers (not playlist order)
+- [x] Playlist downloads save artist covers when enabled
+- [x] Atmos-only/lyrics/covers skip albums without matching formats (no empty folders)
+- [x] Covers/lyrics multi-format honors selected formats
+- [x] UI renders cleanly on mobile/tablet/desktop; logs wrap
