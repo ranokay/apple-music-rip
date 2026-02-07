@@ -307,9 +307,7 @@ def detect_format_group(path: Path, gen: Dict[str, Any], aud: Dict[str, Any]) ->
         return "flac"
 
     fmt = norm_text(str(aud.get("Format") or ""))
-    prof = norm_text(
-        str(aud.get("Format profile") or aud.get("Format_Profile") or "")
-    )
+    prof = norm_text(str(aud.get("Format profile") or aud.get("Format_Profile") or ""))
     extra = norm_text(
         str(
             aud.get("Format_AdditionalFeatures")
@@ -635,9 +633,14 @@ def main() -> None:
         print(
             colorize(use_color, f"[GROUP {idx}/{len(groups)}]", C.BOLD, C.BRIGHT_BLUE)
         )
-        print(colorize(use_color, "KEEP", C.BOLD, C.BRIGHT_GREEN), winner.pretty(use_color))
+        print(
+            colorize(use_color, "KEEP", C.BOLD, C.BRIGHT_GREEN),
+            winner.pretty(use_color),
+        )
         for lo in losers:
-            print(colorize(use_color, "DEL ", C.BOLD, C.BRIGHT_RED), lo.pretty(use_color))
+            print(
+                colorize(use_color, "DEL ", C.BOLD, C.BRIGHT_RED), lo.pretty(use_color)
+            )
         print()
 
         for lo in losers:
@@ -673,7 +676,11 @@ def main() -> None:
     print()
 
     for p in uniq_delete:
-        tag = colorize(use_color, "[DRY]", C.BRIGHT_YELLOW) if dry_run else colorize(use_color, "[DEL]", C.BRIGHT_RED)
+        tag = (
+            colorize(use_color, "[DRY]", C.BRIGHT_YELLOW)
+            if dry_run
+            else colorize(use_color, "[DEL]", C.BRIGHT_RED)
+        )
         print(tag, colorize(use_color, str(p), C.BRIGHT_WHITE))
 
     if not dry_run:

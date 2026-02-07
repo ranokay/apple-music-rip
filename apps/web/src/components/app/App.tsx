@@ -33,6 +33,16 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import {
+	buildMetadataProfileOverridePayload,
+	cloneMetadataByContainer,
+	createDefaultMetadataByContainer,
+	METADATA_CONTAINERS,
+	METADATA_CONTAINER_LABELS,
+	type MetadataContainer,
+	METADATA_TAG_OPTIONS_BY_CONTAINER,
+	resolveMetadataTagsFromConfig,
+} from "./metadataProfiles";
 
 const LOG_IMPORTANT = [
 	"✅",
@@ -48,27 +58,29 @@ const LOG_IMPORTANT = [
 	"🔓",
 ];
 
+type QualityFormat = "lossless" | "hires" | "aac" | "atmos";
+
 const QUALITY_PRESETS = [
 	{
-		id: "atmos",
+		id: "atmos" as QualityFormat,
 		name: "Dolby Atmos",
 		badge: "Spatial",
 		hint: "Immersive + animated artwork",
 	},
 	{
-		id: "hires",
+		id: "hires" as QualityFormat,
 		name: "Hi-Res Lossless",
 		badge: "Up to 192kHz",
 		hint: "Default",
 	},
 	{
-		id: "lossless",
+		id: "lossless" as QualityFormat,
 		name: "Lossless (ALAC)",
 		badge: "CD Quality",
 		hint: "Fast + light",
 	},
 	{
-		id: "aac",
+		id: "aac" as QualityFormat,
 		name: "High-Quality AAC",
 		badge: "256 kbps",
 		hint: "Smallest files",
@@ -155,13 +167,22 @@ export default function App() {
 	const [trackFilter, setTrackFilter] = useState("");
 	const [selectedTracks, setSelectedTracks] = useState<Set<number>>(new Set());
 	const [selectedQualities, setSelectedQualities] = useState<
-		Record<string, boolean>
+		Record<QualityFormat, boolean>
 	>({
 		atmos: false,
 		hires: true,
 		lossless: false,
 		aac: false,
 	});
+	const [savedMetadataTagsByContainer, setSavedMetadataTagsByContainer] =
+		useState<Record<MetadataContainer, string[]>>(
+			createDefaultMetadataByContainer(),
+		);
+	const [metadataUseDefaults, setMetadataUseDefaults] = useState(true);
+	const [metadataOverrideByContainer, setMetadataOverrideByContainer] =
+		useState<Record<MetadataContainer, string[]>>(
+			createDefaultMetadataByContainer(),
+		);
 	const [configDraft, setConfigDraft] = useState<Record<
 		string,
 		unknown
@@ -232,7 +253,11 @@ export default function App() {
 			lossless: false,
 			aac: false,
 		});
-	}, [previewData]);
+		setMetadataUseDefaults(true);
+		setMetadataOverrideByContainer(
+			cloneMetadataByContainer(savedMetadataTagsByContainer),
+		);
+	}, [previewData, savedMetadataTagsByContainer]);
 
 	useEffect(() => {
 		const loadFolders = async () => {
@@ -243,6 +268,11 @@ export default function App() {
 				}>("/api/get-config");
 				if (data.status === "ok" && data.config) {
 					setConfigDraft(data.config);
+					const resolvedMetadata = resolveMetadataTagsFromConfig(data.config);
+					setSavedMetadataTagsByContainer(resolvedMetadata);
+					setMetadataOverrideByContainer(
+						cloneMetadataByContainer(resolvedMetadata),
+					);
 					setFolders({
 						alac: String(data.config["alac-save-folder"] ?? "AM-DL downloads"),
 						atmos: String(
@@ -363,7 +393,9 @@ export default function App() {
 			return;
 		}
 
-		const formats = Object.entries(selectedQualities)
+		const formats = (Object.entries(selectedQualities) as Array<
+			[QualityFormat, boolean]
+		>)
 			.filter(([, isSelected]) => isSelected)
 			.map(([key]) => key);
 
@@ -375,7 +407,11 @@ export default function App() {
 		setQualityError(false);
 		setTrackError("");
 		const effectiveFormats =
-			formats.length > 0 ? formats : (["lossless"] as string[]);
+			formats.length > 0 ? formats : (["lossless"] as QualityFormat[]);
+		const metadataProfileOverride = buildMetadataProfileOverridePayload(
+			metadataUseDefaults,
+			metadataOverrideByContainer,
+		);
 
 		const payload = {
 			link,
@@ -386,6 +422,7 @@ export default function App() {
 			title: previewData?.title ?? "",
 			release_type: previewData?.release_type ?? "Albums",
 			track_count: previewData?.track_count ?? previewData?.tracks?.length ?? 1,
+			metadata_profile_override: metadataProfileOverride,
 		};
 
 		try {
@@ -446,8 +483,25 @@ export default function App() {
 		setSelectedTracks(new Set());
 	};
 
-	const toggleQuality = (quality: string) => {
+	const toggleQuality = (quality: QualityFormat) => {
 		setSelectedQualities((prev) => ({ ...prev, [quality]: !prev[quality] }));
+	};
+
+	const toggleMetadataTag = (container: MetadataContainer, tag: string) => {
+		setMetadataOverrideByContainer((prev) => {
+			const current = new Set(prev[container]);
+			if (current.has(tag)) {
+				current.delete(tag);
+			} else {
+				current.add(tag);
+			}
+			return {
+				...prev,
+				[container]: METADATA_TAG_OPTIONS_BY_CONTAINER[container]
+					.map((option) => option.value)
+					.filter((value) => current.has(value)),
+			};
+		});
 	};
 
 	const updateFolderField = (key: "alac" | "atmos" | "aac", value: string) => {
@@ -924,6 +978,78 @@ export default function App() {
 									Select at least one quality.
 								</p>
 							) : null}
+						</div>
+
+						<div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+							<div className="flex flex-wrap items-start justify-between gap-3">
+								<div>
+									<p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+										Metadata profile
+									</p>
+									<p className="text-xs text-slate-500 dark:text-slate-400">
+										Choose tags by target container for this run, or use saved defaults.
+									</p>
+								</div>
+								<div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+									<span>Use saved defaults</span>
+									<Switch
+										checked={metadataUseDefaults}
+										onCheckedChange={setMetadataUseDefaults}
+									/>
+								</div>
+							</div>
+
+							{metadataUseDefaults ? (
+								<p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+									Using metadata profiles from Settings.
+								</p>
+							) : (
+								<div className="mt-4 grid gap-3">
+									{METADATA_CONTAINERS.map((container) => {
+										const selected = new Set(
+											metadataOverrideByContainer[container],
+										);
+										const tagOptions = METADATA_TAG_OPTIONS_BY_CONTAINER[container];
+										return (
+											<div
+												key={container}
+												className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950"
+											>
+												<div className="flex items-center justify-between gap-2">
+													<p className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+														{METADATA_CONTAINER_LABELS[container]}
+													</p>
+													<Badge
+														variant="outline"
+														className="border-slate-200 text-[10px] dark:border-slate-700 dark:text-slate-300"
+													>
+														{metadataOverrideByContainer[container].length} tags
+													</Badge>
+												</div>
+												<div className="mt-3 grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+													{tagOptions.map((option) => (
+														<label
+															key={`${container}-${option.value}`}
+															className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
+														>
+															<Checkbox
+																checked={selected.has(option.value)}
+																onCheckedChange={() =>
+																	toggleMetadataTag(
+																		container,
+																		option.value,
+																	)
+																}
+															/>
+															<span>{option.label}</span>
+														</label>
+													))}
+												</div>
+											</div>
+										);
+									})}
+								</div>
+							)}
 						</div>
 
 						<div className="grid gap-4">

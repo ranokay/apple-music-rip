@@ -1,8 +1,4 @@
-import {
-	type ChildProcessWithoutNullStreams,
-	spawn,
-	spawnSync,
-} from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import net from "node:net";
@@ -12,6 +8,12 @@ import readline from "node:readline";
 import { staticPlugin } from "@elysiajs/static";
 import { Elysia } from "elysia";
 import yaml from "js-yaml";
+import {
+	DOWNLOAD_FORMATS,
+	type DownloadFormat,
+	type ResolvedMetadataProfiles,
+	resolveMetadataProfilesForRequest,
+} from "./metadata-profiles";
 
 const SURVEY_REPLACE_FLAG =
 	"-mod=mod -replace=github.com/AlecAivazis/survey/v2=../wrapper/survey_stub";
@@ -22,6 +24,11 @@ const APPS_ROOT = path.join(REPO_ROOT, "apps");
 const AMD_DIR = path.join(APPS_ROOT, "apple-music-downloader");
 const CONFIG_PATH = path.join(AMD_DIR, "config.yaml");
 const DOWNLOAD_HISTORY_FILE = path.join(APPS_ROOT, "download_history.json");
+const DOWNLOAD_UNAVAILABLE_FILE = path.join(
+	APPS_ROOT,
+	"download_unavailable.json",
+);
+const REPAIR_HISTORY_FILE = path.join(APPS_ROOT, "repair_history.json");
 const DIST_DIR = path.join(WEB_ROOT, "dist");
 const WRAPPER_CONTAINER_NAMES = ["wrapper"];
 
@@ -33,7 +40,7 @@ const app = new Elysia();
 let wrapperRunning = false;
 const wrapperLogs: string[] = [];
 const downloaderLogs: string[] = [];
-let downloadProcess: ChildProcessWithoutNullStreams | null = null;
+let downloadProcess: ChildProcess | null = null;
 let downloadRunning = false;
 let lastWrapperLogCount = 0;
 let lastWrapperContainer: string | null = null;
@@ -50,6 +57,30 @@ let downloadHistoryEntries: Array<{
 	track_name: string;
 	storefront: string;
 	formats: string[];
+}> = [];
+let downloadUnavailableEntries: Array<{
+	artist: string;
+	album: string;
+	release_type: string;
+	album_id: string;
+	track_num: number;
+	track_name: string;
+	storefront: string;
+	requested_format: string;
+	reason: string;
+}> = [];
+let repairHistoryEntries: Array<{
+	artist: string;
+	album: string;
+	release_type: string;
+	album_id: string;
+	track_num: number;
+	track_name: string;
+	storefront: string;
+	requested_format: string;
+	repair_mode: string;
+	reason: string;
+	file_path: string;
 }> = [];
 
 function appendLog(list: string[], line: string) {
@@ -83,6 +114,136 @@ function saveDownloadHistory(history: Record<string, unknown>) {
 		console.error("Error saving download history:", error);
 		return false;
 	}
+}
+
+function loadDownloadUnavailableHistory() {
+	if (existsSync(DOWNLOAD_UNAVAILABLE_FILE)) {
+		try {
+			const raw = readFileSync(DOWNLOAD_UNAVAILABLE_FILE, "utf-8");
+			return JSON.parse(raw);
+		} catch {
+			return { entries: [] };
+		}
+	}
+	return { entries: [] };
+}
+
+function saveDownloadUnavailableHistory(history: Record<string, unknown>) {
+	try {
+		writeFileSync(
+			DOWNLOAD_UNAVAILABLE_FILE,
+			JSON.stringify(history, null, 2),
+			"utf-8",
+		);
+		return true;
+	} catch (error) {
+		console.error("Error saving unavailable download history:", error);
+		return false;
+	}
+}
+
+function loadRepairHistory() {
+	if (existsSync(REPAIR_HISTORY_FILE)) {
+		try {
+			const raw = readFileSync(REPAIR_HISTORY_FILE, "utf-8");
+			return JSON.parse(raw);
+		} catch {
+			return { entries: [] };
+		}
+	}
+	return { entries: [] };
+}
+
+function saveRepairHistory(history: Record<string, unknown>) {
+	try {
+		writeFileSync(REPAIR_HISTORY_FILE, JSON.stringify(history, null, 2), "utf-8");
+		return true;
+	} catch (error) {
+		console.error("Error saving repair history:", error);
+		return false;
+	}
+}
+
+function addToRepairHistory(entry: {
+	artist: string;
+	album: string;
+	release_type: string;
+	album_id: string;
+	track_num: number;
+	track_name: string;
+	storefront: string;
+	requested_format: string;
+	repair_mode: string;
+	reason: string;
+	file_path: string;
+}) {
+	const history = loadRepairHistory() as {
+		entries?: Array<Record<string, unknown>>;
+	};
+	if (!Array.isArray(history.entries)) {
+		history.entries = [];
+	}
+	const key = `${entry.artist}__${entry.album}__${entry.album_id}__${entry.track_num}__${entry.requested_format}__${entry.file_path}`;
+	const found = history.entries.find(
+		(item) =>
+			`${item.artist ?? ""}__${item.album ?? ""}__${item.album_id ?? ""}__${item.track_num ?? 0}__${item.requested_format ?? ""}__${item.file_path ?? ""}` ===
+			key,
+	);
+	if (found) {
+		const currentCount = Number.parseInt(String(found.repair_count ?? "0"), 10);
+		found.repair_count = Number.isNaN(currentCount) ? 1 : currentCount + 1;
+		found.reason = entry.reason;
+		found.repair_mode = entry.repair_mode;
+		found.track_name = entry.track_name;
+		found.release_type = entry.release_type;
+		found.storefront = entry.storefront;
+		found.last_repaired = new Date().toISOString();
+	} else {
+		history.entries.push({
+			...entry,
+			repair_count: 1,
+			first_repaired: new Date().toISOString(),
+			last_repaired: new Date().toISOString(),
+		});
+	}
+	saveRepairHistory(history as Record<string, unknown>);
+	return true;
+}
+
+function addToDownloadUnavailableHistory(entry: {
+	artist: string;
+	album: string;
+	release_type: string;
+	album_id: string;
+	track_num: number;
+	track_name: string;
+	storefront: string;
+	requested_format: string;
+	reason: string;
+}) {
+	const history = loadDownloadUnavailableHistory() as {
+		entries?: Array<Record<string, unknown>>;
+	};
+	if (!Array.isArray(history.entries)) {
+		history.entries = [];
+	}
+	const key = `${entry.artist}__${entry.album}__${entry.album_id}__${entry.track_num}__${entry.requested_format}__${entry.reason}`;
+	const found = history.entries.find(
+		(item) =>
+			`${item.artist ?? ""}__${item.album ?? ""}__${item.album_id ?? ""}__${item.track_num ?? 0}__${item.requested_format ?? ""}__${item.reason ?? ""}` ===
+			key,
+	);
+	if (found) {
+		found.last_updated = new Date().toISOString();
+	} else {
+		history.entries.push({
+			...entry,
+			date_added: new Date().toISOString(),
+			last_updated: new Date().toISOString(),
+		});
+	}
+	saveDownloadUnavailableHistory(history as Record<string, unknown>);
+	return true;
 }
 
 function addToDownloadHistory(
@@ -152,20 +313,53 @@ function processHistoryEntry(line: string, formats: string[]) {
 	try {
 		const jsonStr = line.slice(8);
 		const entry = JSON.parse(jsonStr);
-		if (entry?._history_entry !== "download") return false;
+		if (entry?._history_entry === "download") {
+			downloadHistoryEntries.push({
+				artist: entry.artist ?? "Unknown Artist",
+				album: entry.album ?? "Unknown Album",
+				release_type: entry.release_type ?? "Albums",
+				album_id: entry.album_id ?? "",
+				track_num: entry.track_num ?? 1,
+				track_name: entry.track_name ?? "",
+				storefront: entry.storefront ?? "us",
+				formats,
+			});
 
-		downloadHistoryEntries.push({
-			artist: entry.artist ?? "Unknown Artist",
-			album: entry.album ?? "Unknown Album",
-			release_type: entry.release_type ?? "Albums",
-			album_id: entry.album_id ?? "",
-			track_num: entry.track_num ?? 1,
-			track_name: entry.track_name ?? "",
-			storefront: entry.storefront ?? "us",
-			formats,
-		});
-
-		return true;
+			return true;
+		}
+		if (entry?._history_entry === "unavailable") {
+			downloadUnavailableEntries.push({
+				artist: entry.artist ?? "Unknown Artist",
+				album: entry.album ?? "Unknown Album",
+				release_type: entry.release_type ?? "Albums",
+				album_id: entry.album_id ?? "",
+				track_num: entry.track_num ?? 1,
+				track_name: entry.track_name ?? "",
+				storefront: entry.storefront ?? "us",
+				requested_format:
+					entry.requested_format ?? formats[0] ?? "lossless",
+				reason: entry.reason ?? "unavailable",
+			});
+			return true;
+		}
+		if (entry?._history_entry === "repair") {
+			repairHistoryEntries.push({
+				artist: entry.artist ?? "Unknown Artist",
+				album: entry.album ?? "Unknown Album",
+				release_type: entry.release_type ?? "Albums",
+				album_id: entry.album_id ?? "",
+				track_num: entry.track_num ?? 1,
+				track_name: entry.track_name ?? "",
+				storefront: entry.storefront ?? "us",
+				requested_format:
+					entry.requested_format ?? formats[0] ?? "lossless",
+				repair_mode: entry.repair_mode ?? "",
+				reason: entry.reason ?? "unknown",
+				file_path: entry.file_path ?? "",
+			});
+			return true;
+		}
+		return false;
 	} catch {
 		return false;
 	}
@@ -221,6 +415,57 @@ function saveCollectedHistoryEntries() {
 	});
 
 	downloadHistoryEntries = [];
+}
+
+function saveCollectedUnavailableEntries() {
+	if (downloadUnavailableEntries.length === 0) return;
+	for (const entry of downloadUnavailableEntries) {
+		addToDownloadUnavailableHistory(entry);
+	}
+	downloadUnavailableEntries = [];
+}
+
+function saveCollectedRepairEntries() {
+	if (repairHistoryEntries.length === 0) return;
+	for (const entry of repairHistoryEntries) {
+		addToRepairHistory(entry);
+	}
+	repairHistoryEntries = [];
+}
+
+function appendRepairRunSummary(entries: typeof repairHistoryEntries) {
+	if (entries.length === 0) return;
+	appendLog(
+		downloaderLogs,
+		`🛠️ Repaired tracks this run (${entries.length}):`,
+	);
+	for (const entry of entries) {
+		const trackNumber = Number.isFinite(entry.track_num) ? entry.track_num : 0;
+		const trackPrefix =
+			trackNumber > 0 ? `${String(trackNumber).padStart(2, "0")} - ` : "";
+		const reason =
+			entry.reason === "corrupt_detected"
+				? "corrupt detected"
+				: entry.reason === "forced"
+					? "forced"
+					: entry.reason || "unknown";
+		const mode = entry.repair_mode || "unknown";
+		appendLog(
+			downloaderLogs,
+			`   - ${entry.artist} / ${entry.album} / ${trackPrefix}${entry.track_name} (${entry.requested_format}, ${mode}, ${reason})`,
+		);
+	}
+}
+
+function readConfigObject() {
+	if (!existsSync(CONFIG_PATH)) {
+		return {} as Record<string, unknown>;
+	}
+	const raw = readFileSync(CONFIG_PATH, "utf-8");
+	return ((yaml.load(raw) as Record<string, unknown>) || {}) as Record<
+		string,
+		unknown
+	>;
 }
 
 function getWrapperLogs() {
@@ -471,9 +716,10 @@ function updateConfigForFormat(formatChoice: string, downloadMode: string) {
 
 async function runSingleDownload(
 	link: string,
-	formatChoice: string,
+	formatChoice: DownloadFormat,
 	downloadMode: string,
 	selectedTracks: string,
+	metadataProfiles: ResolvedMetadataProfiles,
 ) {
 	wrapperRunning = await checkWrapperRunning();
 	if (!wrapperRunning) {
@@ -501,22 +747,10 @@ async function runSingleDownload(
 	}
 
 	if (downloadMode === "lyrics") {
-		cmd = [
-			cmd[0],
-			cmd[1],
-			cmd[2],
-			"--lyrics-only",
-			...cmd.slice(3),
-		];
+		cmd = [cmd[0], cmd[1], cmd[2], "--lyrics-only", ...cmd.slice(3)];
 		appendLog(downloaderLogs, `🎵 Starting lyrics-only download: ${link}`);
 	} else if (downloadMode === "covers") {
-		cmd = [
-			cmd[0],
-			cmd[1],
-			cmd[2],
-			"--covers-only",
-			...cmd.slice(3),
-		];
+		cmd = [cmd[0], cmd[1], cmd[2], "--covers-only", ...cmd.slice(3)];
 		appendLog(downloaderLogs, `🎵 Starting covers-only download: ${link}`);
 	}
 
@@ -534,12 +768,29 @@ async function runSingleDownload(
 
 	appendLog(downloaderLogs, `📁 Working directory: ${AMD_DIR}`);
 	appendLog(downloaderLogs, `⚡ Executing: ${cmd.join(" ")}`);
+	appendLog(
+		downloaderLogs,
+		`🧾 Metadata tags (m4a): ${
+			metadataProfiles.m4a.length > 0 ? metadataProfiles.m4a.join(", ") : "(none)"
+		}`,
+	);
+	appendLog(
+		downloaderLogs,
+		`🧾 Metadata tags (flac): ${
+			metadataProfiles.flac.length > 0
+				? metadataProfiles.flac.join(", ")
+				: "(none)"
+		}`,
+	);
 
 	const env = { ...process.env } as Record<string, string>;
 	const goflags = (env.GOFLAGS || "").trim();
 	if (!goflags.includes(SURVEY_REPLACE_FLAG)) {
 		env.GOFLAGS = `${goflags} ${SURVEY_REPLACE_FLAG}`.trim();
 	}
+	env.AMR_METADATA_TAGS_M4A = metadataProfiles.m4a.join(",");
+	env.AMR_METADATA_TAGS_FLAC = metadataProfiles.flac.join(",");
+	env.AMR_SOURCE_FORMAT = formatChoice;
 
 	try {
 		downloadProcess = spawn(cmd[0], cmd.slice(1), {
@@ -640,11 +891,15 @@ async function runSingleDownload(
 
 async function runMultiDownload(
 	link: string,
-	formats: string[],
+	formats: DownloadFormat[],
 	downloadMode: string,
 	selectedTracks: string,
-	metadata: Record<string, unknown> | null,
+	metadataProfiles: ResolvedMetadataProfiles,
 ) {
+	downloadHistoryEntries = [];
+	downloadUnavailableEntries = [];
+	repairHistoryEntries = [];
+
 	const sortedFormats = [...formats].sort((a, b) =>
 		a === "atmos" ? 1 : b === "atmos" ? -1 : 0,
 	);
@@ -691,6 +946,7 @@ async function runMultiDownload(
 			fmt,
 			downloadMode,
 			selectedTracks,
+			metadataProfiles,
 		);
 
 		if (success) {
@@ -707,6 +963,28 @@ async function runMultiDownload(
 		saveCollectedHistoryEntries();
 		appendLog(downloaderLogs, "📝 Download history updated");
 	}
+	if (downloadMode === "audio") {
+		const hadUnavailable = downloadUnavailableEntries.length > 0;
+		saveCollectedUnavailableEntries();
+		if (hadUnavailable) {
+			appendLog(
+				downloaderLogs,
+				"📝 Unavailable tracks log updated (apps/download_unavailable.json)",
+			);
+		}
+	}
+	if (downloadMode === "audio") {
+		const repairedThisRun = [...repairHistoryEntries];
+		const hadRepairs = repairedThisRun.length > 0;
+		saveCollectedRepairEntries();
+		if (hadRepairs) {
+			appendRepairRunSummary(repairedThisRun);
+			appendLog(
+				downloaderLogs,
+				"📝 Repair history updated (apps/repair_history.json)",
+			);
+		}
+	}
 
 	downloadRunning = false;
 	currentProgress = {
@@ -716,7 +994,7 @@ async function runMultiDownload(
 	};
 	appendLog(downloaderLogs, "\n✅ All format downloads completed!");
 
-	return metadata;
+	return metadataProfiles;
 }
 
 function translatePathToWsl(value: string) {
@@ -899,7 +1177,7 @@ app
 		const selectedTracks = (payload?.select_tracks as string | undefined) || "";
 
 		const rawFormats = payload?.formats;
-		const formats = Array.isArray(rawFormats)
+		const requestedFormats = Array.isArray(rawFormats)
 			? rawFormats.map((format) => String(format))
 			: typeof rawFormats === "string"
 				? rawFormats
@@ -907,13 +1185,19 @@ app
 						.map((format) => format.trim())
 						.filter(Boolean)
 				: [];
-
-		const metadata = {
-			artist: (payload?.artist as string | undefined) || "",
-			title: (payload?.title as string | undefined) || "",
-			release_type: (payload?.release_type as string | undefined) || "Albums",
-			track_count: Number(payload?.track_count ?? 1),
-		};
+		const normalizedFormats = requestedFormats.map((format) =>
+			format.toLowerCase(),
+		);
+		const invalidFormats = normalizedFormats.filter(
+			(format) => !DOWNLOAD_FORMATS.includes(format as DownloadFormat),
+		);
+		if (invalidFormats.length > 0) {
+			return {
+				status: "error",
+				msg: `Invalid formats requested: ${invalidFormats.join(", ")}`,
+			};
+		}
+		const formats = normalizedFormats as DownloadFormat[];
 
 		wrapperRunning = await checkWrapperRunning();
 		if (!wrapperRunning) {
@@ -928,17 +1212,38 @@ app
 			return { status: "error", msg: "No URL provided" };
 		}
 
-		const formatsList = formats.length > 0 ? formats : ["lossless"];
+		const formatsList =
+			formats.length > 0 ? formats : (["lossless"] as DownloadFormat[]);
+		let config: Record<string, unknown>;
+		try {
+			config = readConfigObject();
+		} catch (error) {
+			return {
+				status: "error",
+				msg: `Failed to load config: ${String(error)}`,
+			};
+		}
+		const metadataResolution = resolveMetadataProfilesForRequest(
+			payload?.metadata_profile_override,
+			config,
+		);
+		if (metadataResolution.error) {
+			return { status: "error", msg: metadataResolution.error };
+		}
 
 		currentProgress = { label: "Starting...", percent: 0, details: "" };
 		downloadRunning = true;
 
-		runMultiDownload(link, formatsList, mode, selectedTracks, metadata).catch(
-			(error) => {
-				appendLog(downloaderLogs, `❌ Download error: ${error}`);
-				downloadRunning = false;
-			},
-		);
+		runMultiDownload(
+			link,
+			formatsList,
+			mode,
+			selectedTracks,
+			metadataResolution.profiles,
+		).catch((error) => {
+			appendLog(downloaderLogs, `❌ Download error: ${error}`);
+			downloadRunning = false;
+		});
 
 		return {
 			status: "ok",
@@ -956,8 +1261,12 @@ app
 			appendLog(downloaderLogs, "🛑 Stop signal sent to downloader");
 
 			try {
-				process.kill(-downloadProcess.pid, "SIGKILL");
-				appendLog(downloaderLogs, "🛑 Download killed");
+				if (typeof downloadProcess.pid === "number") {
+					process.kill(-downloadProcess.pid, "SIGKILL");
+					appendLog(downloaderLogs, "🛑 Download killed");
+				} else {
+					throw new Error("download process has no PID");
+				}
 			} catch {
 				try {
 					downloadProcess.kill("SIGKILL");
@@ -1011,6 +1320,7 @@ app
 				"convert-coreaudio-alac",
 				"convert-keep-original",
 				"convert-skip-if-source-matches",
+				"metadata-atmos-prefix",
 			]);
 
 			const pathFields = new Set([

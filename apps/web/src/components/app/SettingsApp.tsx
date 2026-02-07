@@ -1,4 +1,4 @@
-import { ChevronLeft, Loader2, Save } from "lucide-react";
+import { ChevronLeft, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import ThemeToggle from "@/components/app/ThemeToggle";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -25,11 +25,30 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import {
+	DEFAULT_METADATA_TAGS_BY_CONTAINER,
+	createEmptyMetadataCustomTagRule,
+	isMetadataCustomTagRuleValid,
+	METADATA_CONTAINERS,
+	METADATA_CONTAINER_SHORT_LABELS,
+	METADATA_CUSTOM_TAG_RULES_KEY,
+	type MetadataCustomTagRule,
+	type MetadataContainer,
+	type MetadataSourceFormat,
+	METADATA_SOURCE_FORMAT_LABELS,
+	METADATA_SOURCE_FORMATS,
+	METADATA_TAG_OPTIONS_BY_CONTAINER,
+	normalizeMetadataCustomTagRule,
+	resolveMetadataCustomTagRulesFromConfig,
+	serializeMetadataCustomTagRulesForConfig,
+	validateMetadataCustomTagRule,
+} from "./metadataProfiles";
 
 type FieldType =
 	| "text"
 	| "number"
 	| "textarea"
+	| "string-list"
 	| "select"
 	| "multi-select"
 	| "switch";
@@ -40,7 +59,7 @@ type Field = {
 	type: FieldType;
 	placeholder?: string;
 	helper?: string;
-	options?: Array<{ value: string; label: string }>;
+	options?: ReadonlyArray<{ value: string; label: string }>;
 	defaultValues?: string[];
 };
 
@@ -309,6 +328,18 @@ const SECTIONS: Section[] = [
 				helper: "Requires ffmpeg.",
 			},
 			{
+				id: "alac-repair-mode",
+				label: "ALAC Repair Mode",
+				type: "select",
+				options: [
+					{ value: "all", label: "Repair All ALAC" },
+					{ value: "corrupt-only", label: "Repair Corrupt Only" },
+					{ value: "off", label: "Off" },
+				],
+				helper:
+					"Uses macOS alac_at when available; Windows/Linux will fall back to ffmpeg's native decoder.",
+			},
+			{
 				id: "convert-format",
 				label: "Convert Format",
 				type: "select",
@@ -368,6 +399,39 @@ const SECTIONS: Section[] = [
 				label: "Extra FFmpeg Arguments",
 				type: "text",
 				placeholder: "Additional ffmpeg arguments",
+			},
+		],
+	},
+	{
+		id: "metadata",
+		title: "Metadata",
+		description:
+			"Configure tag profiles by target container and advanced custom tags.",
+		fields: [
+			{
+				id: "metadata-tags-m4a",
+				label: "M4A / MP4 Tags",
+				type: "multi-select",
+				options: METADATA_TAG_OPTIONS_BY_CONTAINER.m4a,
+				defaultValues: DEFAULT_METADATA_TAGS_BY_CONTAINER.m4a,
+				helper:
+					"Default metadata profile for M4A/MP4 outputs (ALAC, AAC, Atmos). When unset, all known tags are enabled.",
+			},
+			{
+				id: "metadata-tags-flac",
+				label: "FLAC Tags",
+				type: "multi-select",
+				options: METADATA_TAG_OPTIONS_BY_CONTAINER.flac,
+				defaultValues: DEFAULT_METADATA_TAGS_BY_CONTAINER.flac,
+				helper:
+					"Default metadata profile for FLAC outputs. Apple-specific iTunes IDs are omitted for FLAC.",
+			},
+			{
+				id: "metadata-atmos-prefix",
+				label: "Atmos Prefix (🄳)",
+				type: "switch",
+				helper:
+					"Prefix Atmos track Title and Album tags with 🄳 for easier identification in players.",
 			},
 		],
 	},
@@ -457,7 +521,11 @@ export default function SettingsApp() {
 					msg?: string;
 				}>("/api/get-config");
 				if (data.status === "ok" && data.config) {
-					setConfig(data.config);
+					setConfig({
+						...data.config,
+						"metadata-atmos-prefix":
+							data.config["metadata-atmos-prefix"] ?? true,
+					});
 				} else {
 					setMessage({
 						type: "error",
@@ -484,17 +552,131 @@ export default function SettingsApp() {
 		setConfig((prev) => ({ ...prev, [id]: value }));
 	};
 
+	const metadataCustomTagRules = useMemo(
+		() => resolveMetadataCustomTagRulesFromConfig(config),
+		[config],
+	);
+	const metadataCustomTagRuleValidations = useMemo(
+		() => metadataCustomTagRules.map((rule) => validateMetadataCustomTagRule(rule)),
+		[metadataCustomTagRules],
+	);
+	const hasInvalidMetadataCustomTagRules = useMemo(
+		() =>
+			metadataCustomTagRuleValidations.some(
+				(validation) => !isMetadataCustomTagRuleValid(validation),
+			),
+		[metadataCustomTagRuleValidations],
+	);
+
+	const persistMetadataCustomTagRules = (rules: MetadataCustomTagRule[]) => {
+		updateValue(
+			METADATA_CUSTOM_TAG_RULES_KEY,
+			serializeMetadataCustomTagRulesForConfig(rules),
+		);
+	};
+
+	const updateMetadataCustomTagRule = (
+		index: number,
+		patch: Partial<MetadataCustomTagRule>,
+	) => {
+		const nextRules = metadataCustomTagRules.map((rule, currentIndex) =>
+			currentIndex === index
+				? normalizeMetadataCustomTagRule({ ...rule, ...patch })
+				: normalizeMetadataCustomTagRule(rule),
+		);
+		persistMetadataCustomTagRules(nextRules);
+	};
+
+	const toggleMetadataCustomRuleContainer = (
+		index: number,
+		container: MetadataContainer,
+	) => {
+		const row = metadataCustomTagRules[index];
+		if (!row) return;
+		const nextSet = new Set(row.containers);
+		if (nextSet.has(container)) {
+			nextSet.delete(container);
+		} else {
+			nextSet.add(container);
+		}
+		updateMetadataCustomTagRule(index, {
+			containers: METADATA_CONTAINERS.filter((value) => nextSet.has(value)),
+		});
+	};
+
+	const toggleMetadataCustomRuleSourceFormat = (
+		index: number,
+		sourceFormat: MetadataSourceFormat,
+	) => {
+		const row = metadataCustomTagRules[index];
+		if (!row) return;
+		const nextSet = new Set(row.sourceFormats);
+		if (nextSet.has(sourceFormat)) {
+			nextSet.delete(sourceFormat);
+		} else {
+			nextSet.add(sourceFormat);
+		}
+		updateMetadataCustomTagRule(index, {
+			sourceFormats: METADATA_SOURCE_FORMATS.filter((value) =>
+				nextSet.has(value),
+			),
+		});
+	};
+
+	const addMetadataCustomTagRule = () => {
+		persistMetadataCustomTagRules([
+			...metadataCustomTagRules,
+			createEmptyMetadataCustomTagRule(),
+		]);
+	};
+
+	const addAtmosAlbumVersionPreset = () => {
+		persistMetadataCustomTagRules([
+			...metadataCustomTagRules,
+			normalizeMetadataCustomTagRule({
+				key: "ALBUMVERSION",
+				value: "Dolby Atmos",
+				containers: ["m4a"],
+				"source-formats": ["atmos"],
+			}),
+		]);
+	};
+
+	const removeMetadataCustomTagRule = (index: number) => {
+		persistMetadataCustomTagRules(
+			metadataCustomTagRules.filter((_, currentIndex) => currentIndex !== index),
+		);
+	};
+
 	const handleSave = async () => {
+		if (hasInvalidMetadataCustomTagRules) {
+			setMessage({
+				type: "error",
+				text: "Fix invalid custom metadata tag rules before saving.",
+			});
+			return;
+		}
+
+		const nextConfig = {
+			...config,
+			[METADATA_CUSTOM_TAG_RULES_KEY]: serializeMetadataCustomTagRulesForConfig(
+				metadataCustomTagRules,
+			),
+		};
+		delete nextConfig["metadata-custom-tags-m4a"];
+		delete nextConfig["metadata-custom-tags-flac"];
+
 		setSaving(true);
 		try {
 			const res = await fetchJson<{ status: string; msg?: string }>(
 				"/api/save-config",
 				{
 					method: "POST",
-					body: JSON.stringify(config),
+					body: JSON.stringify(nextConfig),
 				},
 			);
 			if (res.status === "ok") {
+				setConfig(nextConfig);
 				setMessage({ type: "success", text: res.msg || "Settings saved." });
 			} else {
 				setMessage({ type: "error", text: res.msg || "Save failed." });
@@ -509,6 +691,7 @@ export default function SettingsApp() {
 	const renderField = (field: Field) => {
 		const value = config[field.id];
 		const useMono =
+			field.type === "string-list" ||
 			field.id.includes("folder") ||
 			field.id.includes("path") ||
 			field.id.includes("format");
@@ -604,6 +787,24 @@ export default function SettingsApp() {
 						placeholder={field.placeholder}
 						onChange={(event) => updateValue(field.id, event.target.value)}
 					/>
+				) : field.type === "string-list" ? (
+					<Textarea
+						id={field.id}
+						className={`min-h-[120px] ${inputClassName}`}
+						value={
+							Array.isArray(value)
+								? value.map((entry) => String(entry)).join("\n")
+								: String(value ?? "")
+						}
+						placeholder={field.placeholder}
+						onChange={(event) => {
+							const lines = event.target.value
+								.split(/\r?\n/)
+								.map((line) => line.trim())
+								.filter(Boolean);
+							updateValue(field.id, lines);
+						}}
+					/>
 				) : field.type === "select" ? (
 					<Select
 						value={String(value ?? field.options?.[0]?.value ?? "")}
@@ -666,7 +867,9 @@ export default function SettingsApp() {
 						<Button
 							className="gap-2"
 							onClick={handleSave}
-							disabled={saving || loading}
+							disabled={
+								saving || loading || hasInvalidMetadataCustomTagRules
+							}
 						>
 							{saving ? (
 								<Loader2 className="h-4 w-4 animate-spin" />
@@ -750,6 +953,196 @@ export default function SettingsApp() {
 												<div key={field.id}>{renderField(field)}</div>
 											))}
 										</div>
+										{section.id === "metadata" ? (
+											<div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+												<div className="flex flex-wrap items-start justify-between gap-3">
+													<div>
+														<p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+															Custom Metadata Tag Rules
+														</p>
+														<p className="text-xs text-slate-500 dark:text-slate-400">
+															Add advanced KEY=VALUE tags and choose where each rule applies.
+														</p>
+													</div>
+													<div className="flex flex-wrap items-center gap-2">
+														<Button
+															type="button"
+															variant="outline"
+															size="sm"
+															onClick={addMetadataCustomTagRule}
+															className="gap-1"
+														>
+															<Plus className="h-3.5 w-3.5" />
+															Add rule
+														</Button>
+														<Button
+															type="button"
+															variant="secondary"
+															size="sm"
+															onClick={addAtmosAlbumVersionPreset}
+														>
+															Add Atmos AlbumVersion preset
+														</Button>
+													</div>
+												</div>
+												{metadataCustomTagRules.length === 0 ? (
+													<p className="text-xs text-slate-500 dark:text-slate-400">
+														No custom rules yet.
+													</p>
+												) : (
+													<div className="grid gap-3">
+														{metadataCustomTagRules.map((rule, index) => {
+															const validation =
+																metadataCustomTagRuleValidations[index] ?? {};
+															return (
+																<div
+																	key={`metadata-custom-rule-${index}`}
+																	className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/40"
+																>
+																	<div className="flex items-center justify-between">
+																		<p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+																			Rule {index + 1}
+																		</p>
+																		<Button
+																			type="button"
+																			variant="ghost"
+																			size="icon"
+																			onClick={() =>
+																				removeMetadataCustomTagRule(index)
+																			}
+																			className="h-7 w-7 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400"
+																		>
+																			<Trash2 className="h-3.5 w-3.5" />
+																		</Button>
+																	</div>
+																	<div className="grid gap-3 md:grid-cols-2">
+																		<div className="grid gap-2">
+																			<Label className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+																				Key
+																			</Label>
+																			<Input
+																				value={rule.key}
+																				onChange={(event) =>
+																					updateMetadataCustomTagRule(index, {
+																						key: event.target.value,
+																					})
+																				}
+																				placeholder="ALBUMVERSION"
+																				className="font-mono text-xs"
+																			/>
+																			{validation.keyError ? (
+																				<p className="text-xs text-rose-600 dark:text-rose-400">
+																					{validation.keyError}
+																				</p>
+																			) : null}
+																		</div>
+																		<div className="grid gap-2">
+																			<Label className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+																				Value
+																			</Label>
+																			<Input
+																				value={rule.value}
+																				onChange={(event) =>
+																					updateMetadataCustomTagRule(index, {
+																						value: event.target.value,
+																					})
+																				}
+																				placeholder="Dolby Atmos"
+																				className="font-mono text-xs"
+																			/>
+																			{validation.valueError ? (
+																				<p className="text-xs text-rose-600 dark:text-rose-400">
+																					{validation.valueError}
+																				</p>
+																			) : null}
+																		</div>
+																	</div>
+																	<div className="grid gap-3 md:grid-cols-2">
+																		<div className="grid gap-2">
+																			<Label className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+																				Containers
+																			</Label>
+																			<div className="grid gap-2">
+																				{METADATA_CONTAINERS.map((container) => (
+																					<label
+																						key={`container-${container}-${index}`}
+																						className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200"
+																					>
+																						<Checkbox
+																							checked={rule.containers.includes(container)}
+																							onCheckedChange={() =>
+																								toggleMetadataCustomRuleContainer(
+																									index,
+																									container,
+																								)
+																							}
+																						/>
+																						<span>
+																							{
+																								METADATA_CONTAINER_SHORT_LABELS[
+																									container
+																								]
+																							}
+																						</span>
+																					</label>
+																				))}
+																			</div>
+																			{validation.containersError ? (
+																				<p className="text-xs text-rose-600 dark:text-rose-400">
+																					{validation.containersError}
+																				</p>
+																			) : null}
+																		</div>
+																		<div className="grid gap-2">
+																			<Label className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+																				Source Formats
+																			</Label>
+																			<div className="grid gap-2">
+																				{METADATA_SOURCE_FORMATS.map((sourceFormat) => (
+																					<label
+																						key={`source-format-${sourceFormat}-${index}`}
+																						className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200"
+																					>
+																						<Checkbox
+																							checked={rule.sourceFormats.includes(
+																								sourceFormat,
+																							)}
+																							onCheckedChange={() =>
+																								toggleMetadataCustomRuleSourceFormat(
+																									index,
+																									sourceFormat,
+																								)
+																							}
+																						/>
+																						<span>
+																							{
+																								METADATA_SOURCE_FORMAT_LABELS[
+																									sourceFormat
+																								]
+																							}
+																						</span>
+																					</label>
+																				))}
+																			</div>
+																			{validation.sourceFormatsError ? (
+																				<p className="text-xs text-rose-600 dark:text-rose-400">
+																					{validation.sourceFormatsError}
+																				</p>
+																			) : null}
+																		</div>
+																	</div>
+																</div>
+															);
+														})}
+													</div>
+												)}
+												{hasInvalidMetadataCustomTagRules ? (
+													<p className="text-xs text-rose-600 dark:text-rose-400">
+														Resolve validation errors before saving settings.
+													</p>
+												) : null}
+											</div>
+										) : null}
 										<Separator />
 										<div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
 											<span>Changes are saved to config.yaml</span>
