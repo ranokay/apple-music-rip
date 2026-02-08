@@ -30,6 +30,10 @@ LANG_TOKENS = {
     "russian": ["ru", "russian"],
 }
 
+# Two-letter language codes are often common words/contractions (e.g. "it's" => "it").
+# Only trust these codes when they appear with explicit version markers.
+AMBIGUOUS_LANG_CODES = {"en", "es", "pt", "fr", "de", "it", "ru"}
+
 # Edition markers we should keep separate (not part of "language", but important)
 EDITION_PATTERNS = [
     r"\bacoustic\b",
@@ -168,6 +172,13 @@ def parse_duration_seconds(x: Any) -> Optional[float]:
     s = str(x).strip()
     if not s:
         return None
+    try:
+        value = float(s)
+        if value > 1000:
+            return value / 1000.0
+        return value
+    except ValueError:
+        pass
     if s.isdigit():
         return float(s) / 1000.0
     mins = re.search(r"(\d+)\s*min", s)
@@ -215,6 +226,10 @@ def extract_language_marker(title: str, album: str) -> str:
     found: List[str] = []
     for canon, toks in LANG_TOKENS.items():
         for tok in toks:
+            if tok in AMBIGUOUS_LANG_CODES:
+                # Accept short ambiguous codes only in explicit "xx ver/version" contexts.
+                if not re.search(rf"\b{re.escape(tok)}\s*(ver\.?|version)\b", hay):
+                    continue
             if re.search(rf"\b{re.escape(tok)}\b", hay):
                 found.append(canon)
                 break
@@ -299,6 +314,22 @@ def detect_format_group(path: Path, gen: Dict[str, Any], aud: Dict[str, Any]) ->
     p = str(path).lower()
     if "/atmos/" in p or "dolby atmos" in p:
         return "atmos"
+
+    gen_extra = gen.get("extra") if isinstance(gen.get("extra"), dict) else {}
+    album_version = norm_text(
+        str(
+            gen.get("ALBUMVERSION")
+            or gen.get("AlbumVersion")
+            or gen.get("Album version")
+            or gen_extra.get("ALBUMVERSION")
+            or gen_extra.get("AlbumVersion")
+            or ""
+        )
+    )
+    album = norm_text(str(gen.get("Album") or ""))
+    if "dolby atmos" in album_version or "dolby atmos" in album:
+        return "atmos"
+
     if "/alac/" in p:
         return "alac"
     if "/aac/" in p:
@@ -340,7 +371,7 @@ def extract_fileinfo(path: Path) -> FileInfo:
 
     ext = path.suffix.lower()
     format_group = detect_format_group(path, gen, aud)
-    duration_s = parse_duration_seconds(gen.get("Duration"))
+    duration_s = parse_duration_seconds(gen.get("Duration") or aud.get("Duration"))
 
     sample_rate = None
     bit_depth = None
@@ -349,8 +380,15 @@ def extract_fileinfo(path: Path) -> FileInfo:
     if ext == ".flac":
         sample_rate = parse_int(aud.get("SamplingRate") or aud.get("Sampling rate"))
         bit_depth = parse_int(aud.get("BitDepth") or aud.get("Bit depth"))
+        aud_extra = aud.get("extra") if isinstance(aud.get("extra"), dict) else {}
         flac_audio_md5 = norm_space(
-            str(aud.get("MD5 of the unencoded content") or "")
+            str(
+                aud.get("MD5 of the unencoded content")
+                or aud.get("MD5_Unencoded")
+                or aud_extra.get("MD5_Unencoded")
+                or aud_extra.get("MD5 of the unencoded content")
+                or ""
+            )
         ).upper()
 
     return FileInfo(
@@ -432,21 +470,32 @@ def cleanup_dirs(root: Path, touched_dirs: Iterable[Path], dry_run: bool) -> Lis
 
 
 def choose_winner(group: List[FileInfo]) -> FileInfo:
-    ext = group[0].ext
-
-    def score_flac(fi: FileInfo) -> Tuple[int, int, int, int, str]:
+    def score(fi: FileInfo) -> Tuple[int, int, int, int, int, str]:
+        # Prefer lossless/high-quality masters first, then release priority.
+        ext_rank = 2 if fi.ext == ".flac" else 1
         sr = fi.sample_rate or 0
         bd = fi.bit_depth or 0
+        fmt_rank = 2 if fi.format_group in {"alac", "flac"} else 1
         pri = fi.pri
-        return (sr, bd, pri, -len(str(fi.path)), str(fi.path))
+        return (ext_rank, sr, bd, fmt_rank, pri, str(fi.path))
 
-    def score_m4a(fi: FileInfo) -> Tuple[int, int, str]:
-        pri = fi.pri
-        return (pri, -len(str(fi.path)), str(fi.path))
+    return sorted(group, key=score, reverse=True)[0]
 
-    if ext == ".flac":
-        return sorted(group, key=score_flac, reverse=True)[0]
-    return sorted(group, key=score_m4a, reverse=True)[0]
+
+def dedupe_scope(fi: FileInfo, include_m4a: bool, split_formats: bool) -> str:
+    # Always keep Atmos in its own dedupe lane.
+    if fi.format_group == "atmos":
+        return "atmos"
+
+    # In cross-format mode, treat all non-Atmos variants as one group so
+    # FLAC/ALAC/AAC duplicates can be resolved together.
+    if include_m4a:
+        return "stereo"
+
+    # Legacy behavior for extension-specific scans.
+    if split_formats:
+        return fi.format_group
+    return "any"
 
 
 def print_header(use_color: bool, title: str) -> None:
@@ -464,7 +513,12 @@ def main() -> None:
     ap.add_argument(
         "--include-m4a",
         action="store_true",
-        help="Include .m4a duplicate detection (no quality comparison)",
+        help="Include .m4a duplicate detection (enabled by default; kept for compatibility)",
+    )
+    ap.add_argument(
+        "--flac-only",
+        action="store_true",
+        help="Scan only .flac files",
     )
     ap.add_argument(
         "--no-split-formats",
@@ -497,10 +551,12 @@ def main() -> None:
 
     dry_run = args.dry_run or not args.apply
 
-    exts = {".flac"}
-    if args.include_m4a:
-        exts.add(".m4a")
+    exts = {".flac", ".m4a"}
+    if args.flac_only:
+        exts = {".flac"}
+    include_m4a = ".m4a" in exts
     split_formats = not args.no_split_formats
+    effective_split = split_formats and not include_m4a
 
     print_header(use_color, "Scan")
     print(
@@ -508,7 +564,9 @@ def main() -> None:
         f"Extensions: {colorize(use_color, ', '.join(sorted(exts)), C.CYAN)}\n"
         f"Mode: {colorize(use_color, 'DRY-RUN', C.BRIGHT_YELLOW) if dry_run else colorize(use_color, 'APPLY', C.BRIGHT_RED)}\n"
         f"Tag duration tolerance: {colorize(use_color, str(args.tag_match_seconds) + 's', C.CYAN)}\n"
-        f"Split formats: {colorize(use_color, 'yes', C.BRIGHT_GREEN) if split_formats else colorize(use_color, 'no', C.BRIGHT_YELLOW)}\n"
+        f"Cross-format matching: {colorize(use_color, 'yes', C.BRIGHT_GREEN) if include_m4a else colorize(use_color, 'no', C.BRIGHT_YELLOW)}\n"
+        f"Atmos isolated: {colorize(use_color, 'yes', C.BRIGHT_GREEN)}\n"
+        f"Split formats: {colorize(use_color, 'yes', C.BRIGHT_GREEN) if effective_split else colorize(use_color, 'no', C.BRIGHT_YELLOW)}\n"
     )
 
     infos: List[FileInfo] = []
@@ -535,40 +593,42 @@ def main() -> None:
     print()
 
     # Grouping strategy:
-    # 1) Strong: same ISRC (same ext + same language marker + same edition marker)
-    # 2) Strong: FLAC decoded-audio MD5 (same language marker + same edition marker)
+    # 1) Strong: same ISRC
+    # 2) Strong: FLAC decoded-audio MD5
     # 3) Loose: tags (artist + normalized title_key) + language+edition, refined by duration
+    # When .m4a scanning is enabled, we intentionally group across extensions and
+    # non-Atmos format folders so FLAC/AAC duplicates can be detected in one run.
+
     strong: Dict[Tuple, List[FileInfo]] = {}
     for fi in infos:
+        scope = dedupe_scope(fi, include_m4a, split_formats)
         if fi.isrc:
             k = (
-                fi.ext,
-                fi.format_group if split_formats else "any",
+                "audio" if include_m4a else fi.ext,
+                scope,
                 "isrc",
-                fi.lang_marker,
-                fi.edition_marker,
                 fi.isrc,
             )
             strong.setdefault(k, []).append(fi)
 
     for fi in infos:
+        scope = dedupe_scope(fi, include_m4a, split_formats)
         if fi.ext == ".flac" and fi.flac_audio_md5:
             k = (
-                fi.ext,
-                fi.format_group if split_formats else "any",
+                "audio" if include_m4a else fi.ext,
+                scope,
                 "flac-md5",
-                fi.lang_marker,
-                fi.edition_marker,
                 fi.flac_audio_md5,
             )
             strong.setdefault(k, []).append(fi)
 
     loose: Dict[Tuple, List[FileInfo]] = {}
     for fi in infos:
+        scope = dedupe_scope(fi, include_m4a, split_formats)
         if fi.artist and fi.title_key:
             k = (
-                fi.ext,
-                fi.format_group if split_formats else "any",
+                "audio" if include_m4a else fi.ext,
+                scope,
                 "tags",
                 fi.lang_marker,
                 fi.edition_marker,

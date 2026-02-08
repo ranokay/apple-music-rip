@@ -48,6 +48,9 @@ let lastDownloadMilestone = -1;
 let lastDecryptMilestone = -1;
 let currentProgress = { label: "", percent: 0, details: "" };
 const STREAM_DOWNLOADER_LOGS = true;
+const MAX_LOG_LINES = 1500;
+const MAX_LOG_LINE_CHARS = 700;
+const LOG_RESPONSE_LIMIT = 300;
 let downloadHistoryEntries: Array<{
 	artist: string;
 	album: string;
@@ -83,11 +86,54 @@ let repairHistoryEntries: Array<{
 	file_path: string;
 }> = [];
 
-function appendLog(list: string[], line: string) {
-	list.push(line);
-	if (list.length > 2000) {
-		list.splice(0, list.length - 2000);
+function truncateLogLine(line: string) {
+	if (line.length <= MAX_LOG_LINE_CHARS) {
+		return line;
 	}
+	const omitted = line.length - MAX_LOG_LINE_CHARS;
+	return `${line.slice(0, MAX_LOG_LINE_CHARS)} … [${omitted} chars truncated]`;
+}
+
+function appendLog(list: string[], line: string) {
+	const normalized = truncateLogLine(String(line));
+	list.push(normalized);
+	if (list.length > MAX_LOG_LINES) {
+		list.splice(0, list.length - MAX_LOG_LINES);
+	}
+}
+
+function summarizeSelectedTracks(
+	selectedTracks: string,
+	previewLimit = 24,
+) {
+	const tokens = selectedTracks
+		.split(",")
+		.map((token) => token.trim())
+		.filter(Boolean);
+
+	if (tokens.length === 0) {
+		return "none";
+	}
+
+	const preview = tokens.slice(0, previewLimit).join(",");
+	if (tokens.length <= previewLimit) {
+		return `${tokens.length} track${tokens.length === 1 ? "" : "s"} (${preview})`;
+	}
+
+	return `${tokens.length} tracks (${preview}, ... +${
+		tokens.length - previewLimit
+	} more)`;
+}
+
+function redactSelectedTracksArg(cmd: string[]) {
+	const redacted = [...cmd];
+	const idx = redacted.indexOf("--select-tracks");
+	if (idx === -1 || idx + 1 >= redacted.length) {
+		return redacted;
+	}
+
+	redacted[idx + 1] = `<${summarizeSelectedTracks(redacted[idx + 1], 12)}>`;
+	return redacted;
 }
 
 function loadDownloadHistory() {
@@ -763,11 +809,15 @@ async function runSingleDownload(
 			selectedTracks,
 			...cmd.slice(3),
 		];
-		appendLog(downloaderLogs, `✅ Selected tracks: ${selectedTracks}`);
+		appendLog(
+			downloaderLogs,
+			`✅ Selected tracks: ${summarizeSelectedTracks(selectedTracks, 36)}`,
+		);
 	}
 
+	const displayCmd = redactSelectedTracksArg(cmd);
 	appendLog(downloaderLogs, `📁 Working directory: ${AMD_DIR}`);
-	appendLog(downloaderLogs, `⚡ Executing: ${cmd.join(" ")}`);
+	appendLog(downloaderLogs, `⚡ Executing: ${displayCmd.join(" ")}`);
 	appendLog(
 		downloaderLogs,
 		`🧾 Metadata tags (m4a): ${
@@ -1096,8 +1146,8 @@ app
 		}
 
 		return {
-			wrapper: wrapperLogs.slice(-200),
-			downloader: downloaderLogs.slice(-200),
+			wrapper: wrapperLogs.slice(-LOG_RESPONSE_LIMIT),
+			downloader: downloaderLogs.slice(-LOG_RESPONSE_LIMIT),
 			wrapper_running: wrapperRunning,
 			download_running: downloadRunning,
 			progress: currentProgress,

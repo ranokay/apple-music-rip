@@ -578,7 +578,7 @@ export default function App() {
 	};
 
 	return (
-		<div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-rose-50 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100">
+		<div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-amber-50 via-white to-rose-50 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100">
 			<div className="relative overflow-hidden">
 				<div className="pointer-events-none absolute inset-0 opacity-60">
 					<div className="absolute -left-32 top-0 h-72 w-72 rounded-full bg-sky-200/40 blur-3xl dark:bg-indigo-500/10" />
@@ -659,9 +659,9 @@ export default function App() {
 						) : null}
 					</header>
 
-					<section className="grid gap-6">
-						<div className="flex flex-col gap-6">
-							<Card className="border-slate-200/60 shadow-sm dark:border-slate-800/80 dark:bg-slate-950/40">
+					<section className="grid min-w-0 gap-6">
+						<div className="flex min-w-0 flex-col gap-6">
+							<Card className="min-w-0 border-slate-200/60 shadow-sm dark:border-slate-800/80 dark:bg-slate-950/40">
 								<CardHeader>
 									<CardTitle className="flex items-center gap-2 text-lg">
 										<Sparkles className="h-5 w-5 text-amber-500 dark:text-amber-300" />
@@ -758,7 +758,7 @@ export default function App() {
 							</Card>
 
 							{folders ? (
-								<Card className="border-slate-200/60 bg-white/80 dark:border-slate-800/80 dark:bg-slate-950/50">
+								<Card className="min-w-0 border-slate-200/60 bg-white/80 dark:border-slate-800/80 dark:bg-slate-950/50">
 									<CardHeader>
 										<CardTitle className="flex items-center gap-2 text-base">
 											<FolderOpen className="h-4 w-4 text-slate-500 dark:text-slate-400" />
@@ -770,11 +770,11 @@ export default function App() {
 									</CardHeader>
 									<CardContent className="grid gap-4">
 										<div className="grid gap-3 sm:grid-cols-3">
-											<div className="grid gap-2">
+											<div className="grid min-w-0 gap-2">
 												<Label className="text-xs uppercase tracking-widest text-slate-400 dark:text-slate-500">
 													ALAC
 												</Label>
-												<div className="flex gap-2">
+												<div className="flex min-w-0 gap-2">
 													<Input
 														className="flex-1 font-mono text-xs"
 														value={folders.alac}
@@ -791,11 +791,11 @@ export default function App() {
 													</Button>
 												</div>
 											</div>
-											<div className="grid gap-2">
+											<div className="grid min-w-0 gap-2">
 												<Label className="text-xs uppercase tracking-widest text-slate-400 dark:text-slate-500">
 													Atmos
 												</Label>
-												<div className="flex gap-2">
+												<div className="flex min-w-0 gap-2">
 													<Input
 														className="flex-1 font-mono text-xs"
 														value={folders.atmos}
@@ -812,11 +812,11 @@ export default function App() {
 													</Button>
 												</div>
 											</div>
-											<div className="grid gap-2">
+											<div className="grid min-w-0 gap-2">
 												<Label className="text-xs uppercase tracking-widest text-slate-400 dark:text-slate-500">
 													AAC
 												</Label>
-												<div className="flex gap-2">
+												<div className="flex min-w-0 gap-2">
 													<Input
 														className="flex-1 font-mono text-xs"
 														value={folders.aac}
@@ -848,7 +848,7 @@ export default function App() {
 								</Card>
 							) : null}
 
-							<Card className="border-slate-200/60 dark:border-slate-800/80 dark:bg-slate-950/40">
+							<Card className="min-w-0 border-slate-200/60 dark:border-slate-800/80 dark:bg-slate-950/40">
 								<CardHeader className="flex flex-col gap-3">
 									<div className="flex w-full items-center justify-between gap-3">
 										<CardTitle className="text-base">
@@ -869,10 +869,10 @@ export default function App() {
 										</div>
 									</div>
 								</CardHeader>
-								<CardContent>
+								<CardContent className="min-w-0">
 									<div
 										ref={downloaderRef}
-										className="h-[min(38vh,20rem)] min-h-[12rem] overflow-y-auto rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-xs dark:border-slate-800 dark:bg-slate-950/60"
+										className="h-[min(38vh,20rem)] min-h-[12rem] w-full max-w-full overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-xs dark:border-slate-800 dark:bg-slate-950/60"
 										style={{ fontFamily: "var(--font-mono)" }}
 									>
 										{filteredDownloaderLogs.length === 0 ? (
@@ -883,7 +883,7 @@ export default function App() {
 											filteredDownloaderLogs.map((line, index) => (
 												<div
 													key={`${line}-${index}`}
-													className={`py-1 whitespace-pre-wrap break-words ${formatDownloaderLog(line)}`}
+													className={`min-w-0 py-1 whitespace-pre-wrap break-all [overflow-wrap:anywhere] ${formatDownloaderLog(line)}`}
 												>
 													&gt; {line}
 												</div>

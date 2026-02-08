@@ -238,7 +238,9 @@ def should_split_standalone_composer_ampersand(raw: str) -> bool:
     if not left_words or not right_words:
         return False
     if len(left_words) == 1 and len(right_words) == 1:
-        if not looks_like_composer_abbreviation(left_words[0]) and not looks_like_composer_abbreviation(right_words[0]):
+        if not looks_like_composer_abbreviation(
+            left_words[0]
+        ) and not looks_like_composer_abbreviation(right_words[0]):
             return False
     return True
 
