@@ -84,6 +84,9 @@ let repairHistoryEntries: Array<{
 	repair_mode: string;
 	reason: string;
 	file_path: string;
+	bit_depth_before?: number;
+	bit_depth_after?: number;
+	bit_depth_reduced?: boolean;
 }> = [];
 
 function truncateLogLine(line: string) {
@@ -222,6 +225,9 @@ function addToRepairHistory(entry: {
 	repair_mode: string;
 	reason: string;
 	file_path: string;
+	bit_depth_before?: number;
+	bit_depth_after?: number;
+	bit_depth_reduced?: boolean;
 }) {
 	const history = loadRepairHistory() as {
 		entries?: Array<Record<string, unknown>>;
@@ -243,6 +249,21 @@ function addToRepairHistory(entry: {
 		found.track_name = entry.track_name;
 		found.release_type = entry.release_type;
 		found.storefront = entry.storefront;
+		if (
+			typeof entry.bit_depth_before === "number" &&
+			Number.isFinite(entry.bit_depth_before)
+		) {
+			found.bit_depth_before = entry.bit_depth_before;
+		}
+		if (
+			typeof entry.bit_depth_after === "number" &&
+			Number.isFinite(entry.bit_depth_after)
+		) {
+			found.bit_depth_after = entry.bit_depth_after;
+		}
+		if (typeof entry.bit_depth_reduced === "boolean") {
+			found.bit_depth_reduced = entry.bit_depth_reduced;
+		}
 		found.last_repaired = new Date().toISOString();
 	} else {
 		history.entries.push({
@@ -388,10 +409,18 @@ function processHistoryEntry(line: string, formats: string[]) {
 			});
 			return true;
 		}
-		if (entry?._history_entry === "repair") {
-			repairHistoryEntries.push({
-				artist: entry.artist ?? "Unknown Artist",
-				album: entry.album ?? "Unknown Album",
+			if (entry?._history_entry === "repair") {
+				const parsedBitDepthBefore = Number.parseInt(
+					String(entry.bit_depth_before ?? ""),
+					10,
+				);
+				const parsedBitDepthAfter = Number.parseInt(
+					String(entry.bit_depth_after ?? ""),
+					10,
+				);
+				repairHistoryEntries.push({
+					artist: entry.artist ?? "Unknown Artist",
+					album: entry.album ?? "Unknown Album",
 				release_type: entry.release_type ?? "Albums",
 				album_id: entry.album_id ?? "",
 				track_num: entry.track_num ?? 1,
@@ -399,12 +428,24 @@ function processHistoryEntry(line: string, formats: string[]) {
 				storefront: entry.storefront ?? "us",
 				requested_format:
 					entry.requested_format ?? formats[0] ?? "lossless",
-				repair_mode: entry.repair_mode ?? "",
-				reason: entry.reason ?? "unknown",
-				file_path: entry.file_path ?? "",
-			});
-			return true;
-		}
+					repair_mode: entry.repair_mode ?? "",
+					reason: entry.reason ?? "unknown",
+					file_path: entry.file_path ?? "",
+					bit_depth_before:
+						Number.isFinite(parsedBitDepthBefore) && parsedBitDepthBefore > 0
+							? parsedBitDepthBefore
+							: undefined,
+					bit_depth_after:
+						Number.isFinite(parsedBitDepthAfter) && parsedBitDepthAfter > 0
+							? parsedBitDepthAfter
+							: undefined,
+					bit_depth_reduced:
+						typeof entry.bit_depth_reduced === "boolean"
+							? entry.bit_depth_reduced
+							: undefined,
+				});
+				return true;
+			}
 		return false;
 	} catch {
 		return false;
@@ -496,9 +537,12 @@ function appendRepairRunSummary(entries: typeof repairHistoryEntries) {
 					? "forced"
 					: entry.reason || "unknown";
 		const mode = entry.repair_mode || "unknown";
+		const bitDepthNote = entry.bit_depth_reduced
+			? `, bit-depth ${entry.bit_depth_before ?? "?"}->${entry.bit_depth_after ?? "?"}`
+			: "";
 		appendLog(
 			downloaderLogs,
-			`   - ${entry.artist} / ${entry.album} / ${trackPrefix}${entry.track_name} (${entry.requested_format}, ${mode}, ${reason})`,
+			`   - ${entry.artist} / ${entry.album} / ${trackPrefix}${entry.track_name} (${entry.requested_format}, ${mode}, ${reason}${bitDepthNote})`,
 		);
 	}
 }

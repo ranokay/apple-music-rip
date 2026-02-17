@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -57,11 +58,51 @@ def probe_duration_seconds(
         return False, None, f"ffprobe returned non-numeric duration: {first}"
 
 
+def probe_true_peak_dbfs(
+    ffmpeg_path: str,
+    path: str,
+) -> tuple[bool, Optional[float], str]:
+    cmd = [
+        ffmpeg_path,
+        "-hide_banner",
+        "-nostats",
+        "-i",
+        path,
+        "-filter_complex",
+        "ebur128=peak=true",
+        "-f",
+        "null",
+        "-",
+    ]
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    stderr = result.stderr or ""
+    stdout = result.stdout or ""
+    out = f"{stderr}\n{stdout}"
+    if result.returncode != 0:
+        message = (result.stderr or "").strip() or (result.stdout or "").strip()
+        return False, None, message or "ffmpeg true-peak probe failed"
+
+    matches = re.findall(r"Peak:\s*([+-]?\d+(?:\.\d+)?)\s*dBFS", out)
+    if not matches:
+        return False, None, "ffmpeg ebur128 output missing true-peak summary"
+
+    try:
+        return True, float(matches[-1]), ""
+    except ValueError:
+        return False, None, f"invalid true-peak value: {matches[-1]}"
+
+
 def validate_file(
     ffmpeg_path: str,
     ffprobe_path: str,
     path: str,
     min_duration: float,
+    max_true_peak_dbfs: Optional[float],
 ) -> tuple[bool, str]:
     cmd = [
         ffmpeg_path,
@@ -94,6 +135,15 @@ def validate_file(
                 return (
                     False,
                     f"duration too short: {duration:.2f}s < {min_duration:.2f}s",
+                )
+        if max_true_peak_dbfs is not None:
+            ok, peak_dbfs, peak_msg = probe_true_peak_dbfs(ffmpeg_path, path)
+            if not ok:
+                return False, f"true-peak check failed: {peak_msg}"
+            if peak_dbfs is not None and peak_dbfs > max_true_peak_dbfs:
+                return (
+                    False,
+                    f"true peak too high: {peak_dbfs:.2f} dBFS > {max_true_peak_dbfs:.2f} dBFS",
                 )
         return True, ""
     return False, message
@@ -129,6 +179,15 @@ def main() -> int:
         type=float,
         default=20.0,
         help="Fail if duration (seconds) is below this value (0 to disable).",
+    )
+    parser.add_argument(
+        "--max-true-peak-dbfs",
+        type=float,
+        default=None,
+        help=(
+            "Optional true-peak limit in dBFS (for example 0.0). "
+            "Files above this value fail validation."
+        ),
     )
     parser.add_argument(
         "--limit",
@@ -180,6 +239,7 @@ def main() -> int:
             ffprobe_path,
             path,
             args.min_duration,
+            args.max_true_peak_dbfs,
         )
         if not ok:
             failures += 1
