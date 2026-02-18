@@ -41,11 +41,19 @@ This project layers a set of custom features on top of the upstream Apple Music 
   - Outputs JSON metadata for album/playlist/song, used by the web UI.
   - Supports `?i=` preselection for album links.
   - Song previews auto-select track 1.
+  - Playlist previews dedupe duplicates by default and expose `original_track_count` / `duplicates_removed` in JSON when matches are removed.
 
 - **CLI track selection (`--select-tracks`)**
   - Accepts lists and ranges (e.g., `1,2,5-7`).
   - Forces selection mode even without interactive prompts.
   - Works for albums and playlists.
+
+- **Playlist pre-download dedupe (`--no-playlist-dedupe`)**
+  - Playlist downloads dedupe before selection and ripping using:
+    - ISRC (primary)
+    - normalized title+artist+type+content-rating with duration tolerance fallback (2s)
+  - Keeps album/EP versions over single versions where duplicates collide.
+  - Can be disabled with `--no-playlist-dedupe`.
 
 ## Flow Control & Safety
 

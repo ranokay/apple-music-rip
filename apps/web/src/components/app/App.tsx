@@ -100,6 +100,8 @@ type PreviewData = {
 	title?: string;
 	release_type?: string;
 	track_count?: number;
+	original_track_count?: number;
+	duplicates_removed?: number;
 	tracks?: PreviewTrack[];
 	preselected?: number[];
 };
@@ -916,6 +918,17 @@ export default function App() {
 									? `${previewData.track_count} tracks`
 									: ""}
 							</div>
+							{(previewData?.duplicates_removed ?? 0) > 0 ? (
+								<div className="text-xs text-amber-600 dark:text-amber-400">
+									Deduped playlist tracks: removed{" "}
+									{previewData?.duplicates_removed} duplicate
+									{previewData?.duplicates_removed === 1 ? "" : "s"}
+									{previewData?.original_track_count
+										? ` (${previewData.track_count}/${previewData.original_track_count} shown)`
+										: ""}
+									.
+								</div>
+							) : null}
 						</DialogDescription>
 					</DialogHeader>
 

@@ -34,6 +34,22 @@ const WRAPPER_CONTAINER_NAMES = ["wrapper"];
 
 const DEFAULT_BROWSE_DIR =
 	process.env.AMR_DEFAULT_DIR || path.join(os.homedir(), "Downloads");
+const DEFAULT_PREVIEW_TIMEOUT_MS = 20 * 60 * 1000;
+
+function parsePreviewTimeoutMs() {
+	const raw = (process.env.AMR_PREVIEW_TIMEOUT_MS || "").trim();
+	if (!raw) {
+		return DEFAULT_PREVIEW_TIMEOUT_MS;
+	}
+	const parsed = Number.parseInt(raw, 10);
+	if (!Number.isFinite(parsed) || parsed <= 0) {
+		return DEFAULT_PREVIEW_TIMEOUT_MS;
+	}
+	// Guardrails: at least 60s, at most 2h.
+	return Math.min(Math.max(parsed, 60_000), 2 * 60 * 60 * 1000);
+}
+
+const PREVIEW_TIMEOUT_MS = parsePreviewTimeoutMs();
 
 const app = new Elysia();
 
@@ -769,14 +785,17 @@ function updateConfigForFormat(formatChoice: string, downloadMode: string) {
 			const config = (yaml.load(raw) as Record<string, unknown>) || {};
 
 			if (formatChoice === "hires") {
-				config["get-m3u8-mode"] = "hires";
+				if (config["get-m3u8-mode"] !== "hires") {
+					config["get-m3u8-mode"] = "hires";
+					writeFileSync(CONFIG_PATH, yaml.dump(config, { indent: 2 }), "utf-8");
+				}
 			} else {
-				config["get-m3u8-mode"] = "web";
+				if (config["get-m3u8-mode"] !== "web") {
+					config["get-m3u8-mode"] = "web";
+					writeFileSync(CONFIG_PATH, yaml.dump(config, { indent: 2 }), "utf-8");
+				}
 			}
-
 			// Custom: leave conversion and animated artwork settings untouched.
-
-			writeFileSync(CONFIG_PATH, yaml.dump(config, { indent: 2 }), "utf-8");
 
 			let saveFolder = "";
 			if (downloadMode === "lyrics") {
@@ -1228,7 +1247,7 @@ app
 					cwd: AMD_DIR,
 					env,
 				},
-				60_000,
+				PREVIEW_TIMEOUT_MS,
 			);
 
 			const stdout = result.stdout.trim();
@@ -1259,7 +1278,11 @@ app
 			}
 		} catch (error) {
 			if ((error as Error).message === "timeout") {
-				return { status: "error", msg: "Preview timed out" };
+				const seconds = Math.round(PREVIEW_TIMEOUT_MS / 1000);
+				return {
+					status: "error",
+					msg: `Preview timed out after ${seconds}s`,
+				};
 			}
 			return { status: "error", msg: String(error) };
 		}
