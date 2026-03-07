@@ -37,10 +37,10 @@ import {
 	buildMetadataProfileOverridePayload,
 	cloneMetadataByContainer,
 	createDefaultMetadataByContainer,
-	METADATA_CONTAINERS,
 	METADATA_CONTAINER_LABELS,
-	type MetadataContainer,
+	METADATA_CONTAINERS,
 	METADATA_TAG_OPTIONS_BY_CONTAINER,
+	type MetadataContainer,
 	resolveMetadataTagsFromConfig,
 } from "./metadataProfiles";
 
@@ -395,9 +395,9 @@ export default function App() {
 			return;
 		}
 
-		const formats = (Object.entries(selectedQualities) as Array<
-			[QualityFormat, boolean]
-		>)
+		const formats = (
+			Object.entries(selectedQualities) as Array<[QualityFormat, boolean]>
+		)
 			.filter(([, isSelected]) => isSelected)
 			.map(([key]) => key);
 
@@ -895,6 +895,78 @@ export default function App() {
 								</CardContent>
 							</Card>
 						</div>
+
+						<div className="flex flex-col gap-6">
+							<Card className="border-slate-200/60 dark:border-slate-800/80 dark:bg-slate-950/40">
+								<CardHeader>
+									<CardTitle className="text-base">Wrapper Signals</CardTitle>
+									<CardDescription>
+										Keep an eye on the runtime container.
+									</CardDescription>
+								</CardHeader>
+								<CardContent>
+									<div
+										ref={wrapperRef}
+										className="h-[min(38vh,20rem)] min-h-[12rem] w-full max-w-full overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-xs dark:border-slate-800 dark:bg-slate-950/60"
+										style={{ fontFamily: "var(--font-mono)" }}
+									>
+										{wrapperLogs.length === 0 ? (
+											<div className="text-slate-400 dark:text-slate-500">
+												No wrapper logs yet.
+											</div>
+										) : (
+											wrapperLogs.map((line, index) => (
+												<div
+													key={`${line}-${index}`}
+													className={`min-w-0 py-1 whitespace-pre-wrap break-all [overflow-wrap:anywhere] ${formatWrapperLog(line)}`}
+												>
+													&gt; {line}
+												</div>
+											))
+										)}
+									</div>
+								</CardContent>
+							</Card>
+
+							<Card className="border-slate-200/60 bg-slate-950 text-slate-100 dark:border-slate-800/80 dark:bg-slate-900">
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2 text-base">
+										<Info className="h-4 w-4 text-amber-300 dark:text-amber-200" />
+										Quick tips
+									</CardTitle>
+								</CardHeader>
+								<CardContent className="space-y-3 text-sm text-slate-200">
+									<div className="flex gap-3">
+										<div className="mt-1 h-2 w-2 rounded-full bg-amber-300" />
+										<p>
+											Run the wrapper container and sign in before starting
+											downloads.
+										</p>
+									</div>
+									<div className="flex gap-3">
+										<div className="mt-1 h-2 w-2 rounded-full bg-amber-300" />
+										<p>
+											Lyrics-only and Covers-only still use track selection to
+											target releases.
+										</p>
+									</div>
+									<div className="flex gap-3">
+										<div className="mt-1 h-2 w-2 rounded-full bg-amber-300" />
+										<p>
+											Hi-Res is the default quality. Toggle more formats in the
+											selection modal.
+										</p>
+									</div>
+									<div className="flex gap-3">
+										<div className="mt-1 h-2 w-2 rounded-full bg-amber-300" />
+										<p>
+											Save paths can be customized in Settings without stopping
+											the UI.
+										</p>
+									</div>
+								</CardContent>
+							</Card>
+						</div>
 					</section>
 				</div>
 			</div>
@@ -1000,7 +1072,8 @@ export default function App() {
 										Metadata profile
 									</p>
 									<p className="text-xs text-slate-500 dark:text-slate-400">
-										Choose tags by target container for this run, or use saved defaults.
+										Choose tags by target container for this run, or use saved
+										defaults.
 									</p>
 								</div>
 								<div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
@@ -1022,7 +1095,8 @@ export default function App() {
 										const selected = new Set(
 											metadataOverrideByContainer[container],
 										);
-										const tagOptions = METADATA_TAG_OPTIONS_BY_CONTAINER[container];
+										const tagOptions =
+											METADATA_TAG_OPTIONS_BY_CONTAINER[container];
 										return (
 											<div
 												key={container}
@@ -1048,10 +1122,7 @@ export default function App() {
 															<Checkbox
 																checked={selected.has(option.value)}
 																onCheckedChange={() =>
-																	toggleMetadataTag(
-																		container,
-																		option.value,
-																	)
+																	toggleMetadataTag(container, option.value)
 																}
 															/>
 															<span>{option.label}</span>

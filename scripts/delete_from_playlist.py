@@ -1,19 +1,27 @@
 #!/usr/bin/env python3
 """
-Delete songs from music library based on an M3U8 playlist file.
+Delete songs from a music library based on an M3U8 playlist file.
 
 Features:
-- Takes music directory path as a parameter
-- Deletes associated lyrics files (.lrc, .txt)
-- Cleans up empty directories
-- Removes folders with only cover art remaining
-- Deletes both stereo (FLAC) and Dolby Atmos (M4A) versions
+- Takes playlist path and music directory path as parameters
+- Auto-maps playlist paths to the provided music directory
+- Deletes only audio files (.flac, .m4a) from playlist entries
+- Deletes stereo/Atmos counterpart versions when present
+- Deletes associated lyrics files (.lrc, .ttml, .txt)
+- Removes empty directories and directories containing only lyrics/covers
 """
 
 import argparse
 import sys
 from pathlib import Path
 from typing import NamedTuple
+from urllib.parse import unquote, urlparse
+
+AUDIO_EXTENSIONS = {".flac", ".m4a"}
+ATMOS_SUFFIX = " (Dolby Atmos)"
+LYRICS_EXTENSIONS = [".lrc", ".ttml", ".txt"]
+COVER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
+COVER_BASENAMES = {"cover", "folder", "album", "front", "artwork"}
 
 
 class Colors:
@@ -33,19 +41,20 @@ class Colors:
 class Stats(NamedTuple):
     """Statistics for the deletion operation."""
 
-    songs_deleted: int
+    entries_processed: int
+    audio_deleted: int
+    counterpart_deleted: int
     lyrics_deleted: int
+    covers_deleted: int
     dirs_deleted: int
-    atmos_pairs_found: int
+    unmapped_entries: int
+    not_found_entries: int
+    skipped_non_audio_entries: int
     errors: int
 
 
 def log_info(msg: str) -> None:
     print(f"{Colors.BLUE}ℹ{Colors.RESET} {msg}")
-
-
-def log_success(msg: str) -> None:
-    print(f"{Colors.GREEN}✓{Colors.RESET} {msg}")
 
 
 def log_warning(msg: str) -> None:
@@ -65,267 +74,419 @@ def log_skip(msg: str) -> None:
 
 
 def parse_m3u8(playlist_path: Path) -> list[str]:
-    """Parse M3U8 playlist and extract file paths."""
-    paths = []
+    """Parse M3U8 playlist and extract non-comment path lines."""
+    paths: list[str] = []
     with open(playlist_path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            # Skip empty lines and metadata lines
             if not line or line.startswith("#"):
                 continue
             paths.append(line)
     return paths
 
 
+def normalize_playlist_entry(raw_path: str) -> str:
+    """Normalize a playlist entry into a filesystem-style path string."""
+    entry = raw_path.strip()
+
+    if entry.lower().startswith("file://"):
+        parsed = urlparse(entry)
+        entry = unquote(parsed.path or "")
+        if parsed.netloc and parsed.netloc.lower() != "localhost":
+            entry = f"/{parsed.netloc}{entry}"
+    else:
+        entry = unquote(entry)
+
+    return entry.replace("\\", "/")
+
+
+def is_absolute_like(path_text: str) -> bool:
+    """Treat POSIX absolute and Windows drive paths as absolute-like."""
+    if path_text.startswith("/"):
+        return True
+    return (
+        len(path_text) >= 3
+        and path_text[0].isalpha()
+        and path_text[1] == ":"
+        and path_text[2] == "/"
+    )
+
+
+def absolute_suffix_parts(path_text: str) -> list[str]:
+    """
+    Build suffix parts for absolute-like paths for remapping onto base_dir.
+
+    Examples:
+    - /music/A/B.flac     -> ["music", "A", "B.flac"]
+    - C:/music/A/B.flac   -> ["music", "A", "B.flac"]
+    """
+    normalized = path_text
+
+    if normalized.startswith("/"):
+        normalized = normalized.lstrip("/")
+    elif (
+        len(normalized) >= 3
+        and normalized[0].isalpha()
+        and normalized[1] == ":"
+        and normalized[2] == "/"
+    ):
+        normalized = normalized[3:]
+
+    return [part for part in normalized.split("/") if part]
+
+
+def resolve_playlist_song_path(raw_path: str, base_dir: Path) -> Path | None:
+    """
+    Convert a playlist entry into an absolute path under base_dir.
+
+    Resolution strategy:
+    1) Relative paths: base_dir / entry
+    2) Absolute paths already inside base_dir: use directly
+    3) Other absolute paths: suffix-based mapping under base_dir, choosing the
+       most specific unique existing file candidate
+    """
+    base_dir = base_dir.resolve()
+    entry = normalize_playlist_entry(raw_path)
+    if not entry:
+        return None
+
+    if not is_absolute_like(entry):
+        candidate = (base_dir / Path(entry)).resolve()
+        return candidate if candidate.is_relative_to(base_dir) else None
+
+    if entry.startswith("/"):
+        absolute_candidate = Path(entry).resolve()
+        if absolute_candidate.is_relative_to(base_dir):
+            return absolute_candidate
+
+    parts = absolute_suffix_parts(entry)
+    if not parts:
+        return None
+
+    matches: list[tuple[int, Path]] = []
+    for idx in range(len(parts)):
+        suffix = parts[idx:]
+        candidate = (base_dir / Path(*suffix)).resolve()
+        if not candidate.is_relative_to(base_dir):
+            continue
+        if candidate.is_file():
+            matches.append((len(suffix), candidate))
+
+    if not matches:
+        return None
+
+    longest = max(length for length, _ in matches)
+    best = [candidate for length, candidate in matches if length == longest]
+    if len(best) != 1:
+        return None
+
+    return best[0]
+
+
 def get_alternate_version_path(song_path: Path) -> Path | None:
     """
-    Get the alternate version path (stereo <-> Dolby Atmos).
+    Get the stereo/Atmos counterpart path.
 
-    Dolby Atmos folders have "(Dolby Atmos)" suffix.
-    Stereo versions are .flac, Atmos versions are .m4a
+    - Stereo: *.flac in "Album" <-> Atmos: *.m4a in "Album (Dolby Atmos)"
     """
+    ext = song_path.suffix.lower()
     parent = song_path.parent
     parent_name = parent.name
 
-    # Check if this is a Dolby Atmos version
-    if "(Dolby Atmos)" in parent_name:
-        # Find stereo version
-        stereo_parent_name = parent_name.replace(" (Dolby Atmos)", "")
-        stereo_parent = parent.parent / stereo_parent_name
-        # Change extension from .m4a to .flac
-        stereo_name = song_path.stem + ".flac"
-        return stereo_parent / stereo_name
-    else:
-        # This might be stereo, look for Atmos version
-        atmos_parent_name = parent_name.rstrip(")")
-        # Insert "(Dolby Atmos)" before the closing part if any
-        # Typical format: [2025] - Album Name
-        # Atmos format: [2025] - Album Name (Dolby Atmos)
-        atmos_parent_name = parent_name + " (Dolby Atmos)"
-        atmos_parent = parent.parent / atmos_parent_name
-        # Change extension from .flac to .m4a
-        atmos_name = song_path.stem + ".m4a"
-        return atmos_parent / atmos_name
+    if ext == ".flac":
+        atmos_parent = parent.parent / f"{parent_name}{ATMOS_SUFFIX}"
+        return atmos_parent / f"{song_path.stem}.m4a"
+
+    if ext == ".m4a" and parent_name.endswith(ATMOS_SUFFIX):
+        stereo_parent = parent.parent / parent_name[: -len(ATMOS_SUFFIX)]
+        return stereo_parent / f"{song_path.stem}.flac"
+
+    return None
 
 
-def get_lyrics_files(song_path: Path) -> list[Path]:
-    """Get associated lyrics files for a song."""
-    lyrics_extensions = [".lrc", ".txt"]
-    lyrics_files = []
-    stem = song_path.stem
-    parent = song_path.parent
-
-    for ext in lyrics_extensions:
-        lyrics_path = parent / (stem + ext)
+def get_associated_lyrics_files(song_path: Path) -> list[Path]:
+    """Get associated lyrics files (same stem, .lrc/.ttml/.txt)."""
+    lyrics_files: list[Path] = []
+    for ext in LYRICS_EXTENSIONS:
+        lyrics_path = song_path.with_suffix(ext)
         if lyrics_path.exists():
             lyrics_files.append(lyrics_path)
-
     return lyrics_files
 
 
+def is_lyrics_file(path: Path) -> bool:
+    return path.suffix.lower() in LYRICS_EXTENSIONS
+
+
 def is_cover_file(path: Path) -> bool:
-    """Check if a file is a cover art file."""
-    cover_names = {"cover", "folder", "album", "front", "artwork"}
-    cover_extensions = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
-
-    return path.suffix.lower() in cover_extensions and path.stem.lower() in cover_names
+    return (
+        path.suffix.lower() in COVER_EXTENSIONS and path.stem.lower() in COVER_BASENAMES
+    )
 
 
-def is_metadata_file(path: Path) -> bool:
-    """Check if a file is a metadata/non-music file that can be deleted with empty folders."""
-    metadata_extensions = {
-        ".jpg",
-        ".jpeg",
-        ".png",
-        ".webp",
-        ".gif",
-        ".bmp",
-        ".lrc",
-        ".txt",
-        ".nfo",
-        ".cue",
-        ".log",
-    }
-    return path.suffix.lower() in metadata_extensions
-
-
-def should_delete_directory(dir_path: Path) -> bool:
+def should_delete_directory(dir_path: Path, ignored_paths: set[Path]) -> bool:
     """
-    Check if a directory should be deleted.
-    Returns True if directory is empty or contains only cover art/metadata files.
+    True when directory is effectively empty or has only lyrics/cover files.
+
+    ignored_paths represent files already scheduled/deleted in this run, so
+    dry-run cleanup mirrors execute-mode behavior.
     """
     if not dir_path.exists() or not dir_path.is_dir():
         return False
 
-    contents = list(dir_path.iterdir())
+    effective_contents: list[Path] = []
+    for item in dir_path.iterdir():
+        resolved = item.resolve()
+        if resolved in ignored_paths:
+            continue
+        effective_contents.append(item)
 
-    # Empty directory
-    if not contents:
+    if not effective_contents:
         return True
 
-    # Check if all remaining files are just covers/metadata
-    for item in contents:
+    for item in effective_contents:
         if item.is_dir():
-            return False  # Has subdirectories, don't delete
-        if not is_metadata_file(item):
-            return False  # Has non-metadata files
+            return False
+        if not (is_lyrics_file(item) or is_cover_file(item)):
+            return False
 
     return True
 
 
-def cleanup_empty_parents(path: Path, base_dir: Path) -> list[Path]:
+def delete_cleanup_directory(
+    dir_path: Path, dry_run: bool, handled_paths: set[Path]
+) -> tuple[bool, int, int, bool]:
     """
-    Clean up empty parent directories up to base_dir.
-    Returns list of deleted directories.
+    Delete lyrics/cover files from a cleanup-eligible directory and remove it.
+
+    Returns:
+    - deleted_dir: directory deletion planned/performed
+    - lyrics_removed: number of lyrics files removed by this step
+    - covers_removed: number of cover files removed by this step
+    - io_error: True only when an I/O error occurred
     """
-    deleted = []
-    current = path.parent
+    if not should_delete_directory(dir_path, handled_paths):
+        return False, 0, 0, False
 
-    while current != base_dir and current.is_relative_to(base_dir):
-        if should_delete_directory(current):
-            deleted.append(current)
-            current = current.parent
-        else:
-            break
+    lyrics_removed = 0
+    covers_removed = 0
 
-    return deleted
+    removable_files: list[Path] = []
+    for item in dir_path.iterdir():
+        resolved = item.resolve()
+        if resolved in handled_paths:
+            continue
+        if item.is_file():
+            removable_files.append(item)
 
+    for item in removable_files:
+        resolved = item.resolve()
+        if is_lyrics_file(item):
+            lyrics_removed += 1
+        elif is_cover_file(item):
+            covers_removed += 1
 
-def delete_file(path: Path, dry_run: bool) -> bool:
-    """Delete a file. Returns True if successful."""
-    if not path.exists():
-        return False
+        if dry_run:
+            handled_paths.add(resolved)
+            continue
+
+        try:
+            item.unlink()
+            handled_paths.add(resolved)
+        except OSError as e:
+            log_error(f"Failed to delete {item}: {e}")
+            return False, 0, 0, True
 
     if dry_run:
-        return True
+        return True, lyrics_removed, covers_removed, False
+
+    try:
+        dir_path.rmdir()
+        return True, lyrics_removed, covers_removed, False
+    except OSError as e:
+        log_error(f"Failed to delete directory {dir_path}: {e}")
+        return False, 0, 0, True
+
+
+def delete_file(path: Path, dry_run: bool) -> tuple[bool, bool]:
+    """
+    Delete a file.
+
+    Returns:
+    - deleted: True if file existed and delete would happen/happened
+    - io_error: True only when delete attempt failed with OSError
+    """
+    if not path.exists():
+        return False, False
+
+    if dry_run:
+        return True, False
 
     try:
         path.unlink()
-        return True
+        return True, False
     except OSError as e:
         log_error(f"Failed to delete {path}: {e}")
-        return False
-
-
-def delete_directory(path: Path, dry_run: bool) -> bool:
-    """Delete a directory and all its contents. Returns True if successful."""
-    if not path.exists():
-        return False
-
-    if dry_run:
-        return True
-
-    try:
-        # Delete all files in directory first
-        for item in path.iterdir():
-            if item.is_file():
-                item.unlink()
-            elif item.is_dir():
-                delete_directory(item, dry_run)
-        path.rmdir()
-        return True
-    except OSError as e:
-        log_error(f"Failed to delete directory {path}: {e}")
-        return False
+        return False, True
 
 
 def process_playlist(
     playlist_path: Path, base_dir: Path, dry_run: bool = True, verbose: bool = False
 ) -> Stats:
-    """Process the playlist and delete songs."""
-
-    songs_deleted = 0
+    """Process playlist and delete matched audio files with cleanup."""
+    audio_deleted = 0
+    counterpart_deleted = 0
     lyrics_deleted = 0
+    covers_deleted = 0
     dirs_deleted = 0
-    atmos_pairs_found = 0
+    unmapped_entries = 0
+    not_found_entries = 0
+    skipped_non_audio_entries = 0
     errors = 0
-
-    # Track directories to clean up at the end
+    handled_paths: set[Path] = set()
     dirs_to_check: set[Path] = set()
 
-    # Parse playlist
     log_info(f"Parsing playlist: {Colors.CYAN}{playlist_path}{Colors.RESET}")
     song_paths = parse_m3u8(playlist_path)
-    log_info(f"Found {Colors.BOLD}{len(song_paths)}{Colors.RESET} songs in playlist")
+    entries_processed = len(song_paths)
+    log_info(f"Found {Colors.BOLD}{entries_processed}{Colors.RESET} playlist entries")
     print()
 
-    # Process each song
-    for raw_path in song_paths:
-        # Convert path to be relative to base_dir
-        # Paths in m3u8 start with /music/, we need to make them relative
-        if raw_path.startswith("/music/"):
-            relative_path = raw_path[7:]  # Remove "/music/"
-        elif raw_path.startswith("/"):
-            relative_path = raw_path[1:]
-        else:
-            relative_path = raw_path
+    base_dir = base_dir.resolve()
 
-        song_path = base_dir / relative_path
+    for raw_path in song_paths:
+        song_path = resolve_playlist_song_path(raw_path, base_dir)
+        if song_path is None:
+            unmapped_entries += 1
+            if verbose:
+                log_skip(f"Unmapped entry: {raw_path}")
+            continue
+
+        song_path = song_path.resolve()
+        relative_path = song_path.relative_to(base_dir)
 
         if verbose:
             print(f"\n{Colors.BOLD}Processing:{Colors.RESET} {relative_path}")
 
-        # Check if main file exists
+        if song_path.suffix.lower() not in AUDIO_EXTENSIONS:
+            skipped_non_audio_entries += 1
+            if verbose:
+                log_skip(f"Skipped non-audio entry: {relative_path}")
+            continue
+
+        if song_path in handled_paths:
+            if verbose:
+                log_skip(f"Already handled: {relative_path}")
+            continue
+
         if not song_path.exists():
+            not_found_entries += 1
             if verbose:
                 log_skip(f"Not found: {song_path}")
-            errors += 1
             continue
 
         files_to_delete: list[Path] = [song_path]
 
-        # Find alternate version (stereo <-> Atmos)
         alt_path = get_alternate_version_path(song_path)
-        if alt_path and alt_path.exists():
-            files_to_delete.append(alt_path)
-            atmos_pairs_found += 1
-            if verbose:
-                log_info(f"Found alternate version: {alt_path.relative_to(base_dir)}")
+        if alt_path is not None:
+            alt_path = alt_path.resolve()
+            if alt_path.is_relative_to(base_dir) and alt_path.exists():
+                files_to_delete.append(alt_path)
+                if verbose:
+                    log_info(
+                        f"Found alternate version: {alt_path.relative_to(base_dir)}"
+                    )
 
-        # Find lyrics files for all versions
-        for f in list(files_to_delete):
-            lyrics = get_lyrics_files(f)
-            files_to_delete.extend(lyrics)
+        unique_targets: list[Path] = []
+        seen_this_entry: set[Path] = set()
+        for target in files_to_delete:
+            target = target.resolve()
+            if target in handled_paths or target in seen_this_entry:
+                continue
+            seen_this_entry.add(target)
+            unique_targets.append(target)
 
-        # Delete files
-        for f in files_to_delete:
-            rel_path = f.relative_to(base_dir) if f.is_relative_to(base_dir) else f
+        for target in unique_targets:
+            deleted, io_error = delete_file(target, dry_run)
+            if io_error:
+                errors += 1
+                continue
+            if not deleted:
+                continue
 
-            if f.suffix.lower() in {".lrc", ".txt"}:
-                if delete_file(f, dry_run):
-                    log_delete(f"Lyrics: {rel_path}")
-                    lyrics_deleted += 1
-            else:
-                if delete_file(f, dry_run):
-                    log_delete(f"Song: {rel_path}")
-                    songs_deleted += 1
-                    dirs_to_check.add(f.parent)
+            handled_paths.add(target)
+            rel_target = target.relative_to(base_dir)
+            log_delete(f"Song: {rel_target}")
+            audio_deleted += 1
+            dirs_to_check.add(target.parent)
 
-    print()
-    log_info("Cleaning up empty directories...")
+            if target != song_path:
+                counterpart_deleted += 1
 
-    # Clean up directories
-    # Sort by depth (deepest first) to clean up properly
-    sorted_dirs = sorted(dirs_to_check, key=lambda p: len(p.parts), reverse=True)
+            for lyrics_path in get_associated_lyrics_files(target):
+                lyrics_path = lyrics_path.resolve()
+                if not lyrics_path.is_relative_to(base_dir):
+                    continue
+                if lyrics_path in handled_paths:
+                    continue
+                deleted_lyrics, io_error = delete_file(lyrics_path, dry_run)
+                if io_error:
+                    errors += 1
+                    continue
+                if not deleted_lyrics:
+                    continue
+
+                handled_paths.add(lyrics_path)
+                log_delete(f"Lyrics: {lyrics_path.relative_to(base_dir)}")
+                lyrics_deleted += 1
+                dirs_to_check.add(lyrics_path.parent)
+
+    if dirs_to_check:
+        print()
+        log_info("Cleaning up empty/lyrics-cover-only directories...")
+
+    sorted_dirs = sorted(
+        {d.resolve() for d in dirs_to_check}, key=lambda p: len(p.parts), reverse=True
+    )
+    deleted_dirs_seen: set[Path] = set()
 
     for dir_path in sorted_dirs:
-        # Walk up the directory tree
         current = dir_path
         while current != base_dir and current.is_relative_to(base_dir):
-            if should_delete_directory(current):
-                rel_path = current.relative_to(base_dir)
-                if delete_directory(current, dry_run):
-                    log_delete(f"Directory: {rel_path}/")
-                    dirs_deleted += 1
+            if current in deleted_dirs_seen:
                 current = current.parent
-            else:
+                continue
+
+            if not should_delete_directory(current, handled_paths):
                 break
 
+            deleted_dir, lyrics_removed, covers_removed, io_error = (
+                delete_cleanup_directory(current, dry_run, handled_paths)
+            )
+            if io_error:
+                errors += 1
+                break
+            if not deleted_dir:
+                break
+
+            deleted_dirs_seen.add(current)
+            handled_paths.add(current.resolve())
+            dirs_deleted += 1
+            lyrics_deleted += lyrics_removed
+            covers_deleted += covers_removed
+            log_delete(f"Directory: {current.relative_to(base_dir)}/")
+            current = current.parent
+
     return Stats(
-        songs_deleted=songs_deleted,
+        entries_processed=entries_processed,
+        audio_deleted=audio_deleted,
+        counterpart_deleted=counterpart_deleted,
         lyrics_deleted=lyrics_deleted,
+        covers_deleted=covers_deleted,
         dirs_deleted=dirs_deleted,
-        atmos_pairs_found=atmos_pairs_found,
+        unmapped_entries=unmapped_entries,
+        not_found_entries=not_found_entries,
+        skipped_non_audio_entries=skipped_non_audio_entries,
         errors=errors,
     )
 
@@ -341,14 +502,27 @@ def print_summary(stats: Stats, dry_run: bool) -> None:
     print(f"{Colors.BOLD}{'═' * 50}{Colors.RESET}")
     print(f"{Colors.BOLD}Summary{Colors.RESET} ({mode})")
     print(f"{Colors.BOLD}{'═' * 50}{Colors.RESET}")
-    print(f"  Songs deleted:        {Colors.CYAN}{stats.songs_deleted}{Colors.RESET}")
+    print(
+        f"  Playlist entries:     {Colors.CYAN}{stats.entries_processed}{Colors.RESET}"
+    )
+    print(f"  Audio deleted:        {Colors.CYAN}{stats.audio_deleted}{Colors.RESET}")
+    print(
+        f"  Counterparts deleted: {Colors.CYAN}{stats.counterpart_deleted}{Colors.RESET}"
+    )
     print(f"  Lyrics deleted:       {Colors.CYAN}{stats.lyrics_deleted}{Colors.RESET}")
+    print(f"  Covers deleted:       {Colors.CYAN}{stats.covers_deleted}{Colors.RESET}")
     print(f"  Directories deleted:  {Colors.CYAN}{stats.dirs_deleted}{Colors.RESET}")
     print(
-        f"  Stereo/Atmos pairs:   {Colors.CYAN}{stats.atmos_pairs_found}{Colors.RESET}"
+        f"  Unmapped entries:     {Colors.CYAN}{stats.unmapped_entries}{Colors.RESET}"
+    )
+    print(
+        f"  Not found entries:    {Colors.CYAN}{stats.not_found_entries}{Colors.RESET}"
+    )
+    print(
+        f"  Skipped non-audio:    {Colors.CYAN}{stats.skipped_non_audio_entries}{Colors.RESET}"
     )
     if stats.errors > 0:
-        print(f"  Errors/Not found:     {Colors.RED}{stats.errors}{Colors.RESET}")
+        print(f"  I/O errors:           {Colors.RED}{stats.errors}{Colors.RESET}")
     print(f"{Colors.BOLD}{'═' * 50}{Colors.RESET}")
 
 
@@ -358,15 +532,14 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s /music playlist.m3u8              # Dry run (preview changes)
-  %(prog)s /music playlist.m3u8 --execute    # Actually delete files
-  %(prog)s /music playlist.m3u8 -v           # Verbose dry run
+  %(prog)s playlist.m3u8 /music              # Dry run (preview changes)
+  %(prog)s playlist.m3u8 /music --execute    # Actually delete files
+  %(prog)s playlist.m3u8 /music -v           # Verbose dry run
         """,
     )
 
-    parser.add_argument("directory", type=Path, help="Base music directory path")
-
     parser.add_argument("playlist", type=Path, help="Path to M3U8 playlist file")
+    parser.add_argument("directory", type=Path, help="Base music directory path")
 
     parser.add_argument(
         "-x",
@@ -385,7 +558,6 @@ Examples:
 
     args = parser.parse_args()
 
-    # Validate inputs
     if not args.playlist.exists():
         log_error(f"Playlist file not found: {args.playlist}")
         return 1
@@ -398,7 +570,6 @@ Examples:
         log_error(f"Not a directory: {args.directory}")
         return 1
 
-    # Print header
     print()
     print(f"{Colors.BOLD}{Colors.MAGENTA}╔{'═' * 48}╗{Colors.RESET}")
     print(
@@ -420,7 +591,6 @@ Examples:
     print()
     log_info(f"Music directory: {Colors.CYAN}{args.directory.absolute()}{Colors.RESET}")
 
-    # Run the process
     stats = process_playlist(
         playlist_path=args.playlist,
         base_dir=args.directory,
@@ -430,8 +600,7 @@ Examples:
 
     print_summary(stats, dry_run)
 
-    # If dry run and there are files to delete, prompt for execution
-    if dry_run and stats.songs_deleted > 0 and not args.yes:
+    if dry_run and stats.audio_deleted > 0 and not args.yes:
         print()
         try:
             response = input(

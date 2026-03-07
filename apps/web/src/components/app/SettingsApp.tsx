@@ -4,7 +4,6 @@ import ThemeToggle from "@/components/app/ThemeToggle";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
 	Card,
 	CardContent,
@@ -12,6 +11,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -26,18 +26,18 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
-	DEFAULT_METADATA_TAGS_BY_CONTAINER,
 	createEmptyMetadataCustomTagRule,
+	DEFAULT_METADATA_TAGS_BY_CONTAINER,
 	isMetadataCustomTagRuleValid,
-	METADATA_CONTAINERS,
 	METADATA_CONTAINER_SHORT_LABELS,
+	METADATA_CONTAINERS,
 	METADATA_CUSTOM_TAG_RULES_KEY,
-	type MetadataCustomTagRule,
-	type MetadataContainer,
-	type MetadataSourceFormat,
 	METADATA_SOURCE_FORMAT_LABELS,
 	METADATA_SOURCE_FORMATS,
 	METADATA_TAG_OPTIONS_BY_CONTAINER,
+	type MetadataContainer,
+	type MetadataCustomTagRule,
+	type MetadataSourceFormat,
 	normalizeMetadataCustomTagRule,
 	resolveMetadataCustomTagRulesFromConfig,
 	serializeMetadataCustomTagRulesForConfig,
@@ -557,7 +557,8 @@ export default function SettingsApp() {
 		[config],
 	);
 	const metadataCustomTagRuleValidations = useMemo(
-		() => metadataCustomTagRules.map((rule) => validateMetadataCustomTagRule(rule)),
+		() =>
+			metadataCustomTagRules.map((rule) => validateMetadataCustomTagRule(rule)),
 		[metadataCustomTagRules],
 	);
 	const hasInvalidMetadataCustomTagRules = useMemo(
@@ -644,7 +645,9 @@ export default function SettingsApp() {
 
 	const removeMetadataCustomTagRule = (index: number) => {
 		persistMetadataCustomTagRules(
-			metadataCustomTagRules.filter((_, currentIndex) => currentIndex !== index),
+			metadataCustomTagRules.filter(
+				(_, currentIndex) => currentIndex !== index,
+			),
 		);
 	};
 
@@ -720,11 +723,11 @@ export default function SettingsApp() {
 
 		// Custom: multi-select UI for array-backed settings.
 		if (field.type === "multi-select") {
-			const hasValue = Object.prototype.hasOwnProperty.call(config, field.id);
+			const hasValue = Object.hasOwn(config, field.id);
 			const selectedValues = Array.isArray(value)
 				? value.map((entry) => String(entry))
 				: !hasValue
-					? field.defaultValues ?? []
+					? (field.defaultValues ?? [])
 					: value === undefined || value === null
 						? []
 						: [String(value)];
@@ -867,9 +870,7 @@ export default function SettingsApp() {
 						<Button
 							className="gap-2"
 							onClick={handleSave}
-							disabled={
-								saving || loading || hasInvalidMetadataCustomTagRules
-							}
+							disabled={saving || loading || hasInvalidMetadataCustomTagRules}
 						>
 							{saving ? (
 								<Loader2 className="h-4 w-4 animate-spin" />
@@ -961,7 +962,8 @@ export default function SettingsApp() {
 															Custom Metadata Tag Rules
 														</p>
 														<p className="text-xs text-slate-500 dark:text-slate-400">
-															Add advanced KEY=VALUE tags and choose where each rule applies.
+															Add advanced KEY=VALUE tags and choose where each
+															rule applies.
 														</p>
 													</div>
 													<div className="flex flex-wrap items-center gap-2">
@@ -1063,29 +1065,33 @@ export default function SettingsApp() {
 																				Containers
 																			</Label>
 																			<div className="grid gap-2">
-																				{METADATA_CONTAINERS.map((container) => (
-																					<label
-																						key={`container-${container}-${index}`}
-																						className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200"
-																					>
-																						<Checkbox
-																							checked={rule.containers.includes(container)}
-																							onCheckedChange={() =>
-																								toggleMetadataCustomRuleContainer(
-																									index,
+																				{METADATA_CONTAINERS.map(
+																					(container) => (
+																						<label
+																							key={`container-${container}-${index}`}
+																							className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200"
+																						>
+																							<Checkbox
+																								checked={rule.containers.includes(
 																									container,
-																								)
-																							}
-																						/>
-																						<span>
-																							{
-																								METADATA_CONTAINER_SHORT_LABELS[
-																									container
-																								]
-																							}
-																						</span>
-																					</label>
-																				))}
+																								)}
+																								onCheckedChange={() =>
+																									toggleMetadataCustomRuleContainer(
+																										index,
+																										container,
+																									)
+																								}
+																							/>
+																							<span>
+																								{
+																									METADATA_CONTAINER_SHORT_LABELS[
+																										container
+																									]
+																								}
+																							</span>
+																						</label>
+																					),
+																				)}
 																			</div>
 																			{validation.containersError ? (
 																				<p className="text-xs text-rose-600 dark:text-rose-400">
@@ -1098,31 +1104,33 @@ export default function SettingsApp() {
 																				Source Formats
 																			</Label>
 																			<div className="grid gap-2">
-																				{METADATA_SOURCE_FORMATS.map((sourceFormat) => (
-																					<label
-																						key={`source-format-${sourceFormat}-${index}`}
-																						className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200"
-																					>
-																						<Checkbox
-																							checked={rule.sourceFormats.includes(
-																								sourceFormat,
-																							)}
-																							onCheckedChange={() =>
-																								toggleMetadataCustomRuleSourceFormat(
-																									index,
+																				{METADATA_SOURCE_FORMATS.map(
+																					(sourceFormat) => (
+																						<label
+																							key={`source-format-${sourceFormat}-${index}`}
+																							className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200"
+																						>
+																							<Checkbox
+																								checked={rule.sourceFormats.includes(
 																									sourceFormat,
-																								)
-																							}
-																						/>
-																						<span>
-																							{
-																								METADATA_SOURCE_FORMAT_LABELS[
-																									sourceFormat
-																								]
-																							}
-																						</span>
-																					</label>
-																				))}
+																								)}
+																								onCheckedChange={() =>
+																									toggleMetadataCustomRuleSourceFormat(
+																										index,
+																										sourceFormat,
+																									)
+																								}
+																							/>
+																							<span>
+																								{
+																									METADATA_SOURCE_FORMAT_LABELS[
+																										sourceFormat
+																									]
+																								}
+																							</span>
+																						</label>
+																					),
+																				)}
 																			</div>
 																			{validation.sourceFormatsError ? (
 																				<p className="text-xs text-rose-600 dark:text-rose-400">

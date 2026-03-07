@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -48,6 +50,19 @@ EDITION_PATTERNS = [
 ]
 
 TITLE_CLEAN_RE = re.compile(r"[\u200b\u200c\u200d\uFEFF]")  # zero-width junk
+FEATURE_PAREN_RE = re.compile(
+    r"[\(\[][^\)\]]*\b(?:feat(?:\.|uring)?|ft\.?|with|w/|versus|vs\.?)\b[^\)\]]*[\)\]]",
+    re.IGNORECASE,
+)
+FEATURE_TRAIL_RE = re.compile(
+    r"\s*(?:-|,)\s*(?:feat(?:\.|uring)?|ft\.?|with|w/|versus|vs\.?)\b.*$",
+    re.IGNORECASE,
+)
+FEATURE_TRAIL_NO_PUNCT_RE = re.compile(
+    r"\s+(?:feat(?:\.|uring)?|ft\.?|versus|vs\.?)\b.*$",
+    re.IGNORECASE,
+)
+FFMPEG_MD5_RE = re.compile(r"\bMD5=([0-9a-fA-F]{32})\b")
 
 
 class C:
@@ -220,6 +235,37 @@ def canonicalize_title_for_matching(title: str) -> str:
     return t
 
 
+def strip_feature_markers(title: str) -> str:
+    """
+    Remove collaboration clauses that frequently vary across releases:
+      "Song (with Artist)" -> "Song"
+      "Song feat. Artist"  -> "Song"
+    """
+    t = norm_space(title)
+    if not t:
+        return t
+    t = FEATURE_PAREN_RE.sub(" ", t)
+    t = FEATURE_TRAIL_RE.sub("", t)
+    t = FEATURE_TRAIL_NO_PUNCT_RE.sub("", t)
+    return norm_space(t)
+
+
+def title_key_for_dedupe(title: str) -> str:
+    return canonicalize_title_for_matching(strip_feature_markers(title))
+
+
+def primary_artist_for_dedupe(performer: str, album_artist: str) -> str:
+    album_artist_norm = norm_space(album_artist)
+    if album_artist_norm:
+        return album_artist_norm
+    performer_norm = norm_space(performer)
+    if not performer_norm:
+        return ""
+    parts = re.split(r"\s*(?:,|;)\s*", performer_norm, maxsplit=1, flags=re.IGNORECASE)
+    primary = parts[0] if parts else performer_norm
+    return norm_space(primary)
+
+
 def extract_language_marker(title: str, album: str) -> str:
     hay = canonicalize_title_for_matching(f"{title} {album}")
 
@@ -257,16 +303,201 @@ def normalize_isrc(isrc: str) -> str:
     return re.sub(r"[^A-Za-z0-9]", "", isrc).upper()
 
 
+def normalize_people_list(raw: str) -> str:
+    s = norm_space(raw)
+    if not s:
+        return ""
+    tokens = [norm_text(x) for x in re.split(r"\s*,\s*", s) if norm_space(x)]
+    if not tokens:
+        return ""
+    uniq = sorted(set(tokens))
+    return "|".join(uniq)
+
+
+def audio_stream_md5(path: Path) -> str:
+    """
+    Hash compressed audio packets so container/tag differences do not affect identity.
+    """
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-nostdin",
+            "-i",
+            str(path),
+            "-map",
+            "0:a:0",
+            "-c",
+            "copy",
+            "-f",
+            "hash",
+            "-hash",
+            "md5",
+            "-",
+        ],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return ""
+    out = f"{proc.stdout}\n{proc.stderr}"
+    m = FFMPEG_MD5_RE.search(out)
+    return m.group(1).upper() if m else ""
+
+
+def decoded_audio_md5(path: Path) -> str:
+    """
+    Hash decoded PCM data so container/tag differences do not affect identity.
+    """
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-nostdin",
+            "-drc_scale",
+            "0",
+            "-i",
+            str(path),
+            "-map",
+            "0:a:0",
+            "-vn",
+            "-sn",
+            "-dn",
+            "-acodec",
+            "pcm_s16le",
+            "-f",
+            "hash",
+            "-hash",
+            "md5",
+            "-",
+        ],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return ""
+    out = f"{proc.stdout}\n{proc.stderr}"
+    m = FFMPEG_MD5_RE.search(out)
+    return m.group(1).upper() if m else ""
+
+
+def decode_pcm_mono_8k(path: Path) -> Tuple[int, ...]:
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-nostdin",
+            "-i",
+            str(path),
+            "-map",
+            "0:a:0",
+            "-ac",
+            "1",
+            "-ar",
+            "8000",
+            "-f",
+            "s16le",
+            "-",
+        ],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if proc.returncode != 0:
+        return tuple()
+    raw = proc.stdout
+    if len(raw) < 2:
+        return tuple()
+    n = len(raw) // 2
+    return struct.unpack("<" + ("h" * n), raw[: n * 2])
+
+
+def m4a_perceptual_fingerprint(path: Path, segment_samples: int = 4096) -> str:
+    """
+    Build a compact, gain-robust fingerprint from low-rate mono PCM.
+    """
+    samples = decode_pcm_mono_8k(path)
+    if len(samples) < segment_samples * 2:
+        return ""
+
+    energy: List[float] = []
+    diff1: List[float] = []
+    zcr: List[float] = []
+    lagdiff: List[float] = []
+    lag = max(1, segment_samples // 8)
+
+    for start in range(0, len(samples) - segment_samples + 1, segment_samples):
+        seg = samples[start : start + segment_samples]
+        if not seg:
+            continue
+
+        sq = float(sum(x * x for x in seg))
+        rms = math.sqrt(sq / len(seg)) if sq > 0 else 1.0
+        inv = 1.0 / max(rms, 1.0)
+        norm = [x * inv for x in seg]
+
+        energy.append(sum(abs(x) for x in norm) / len(norm))
+        diff1.append(
+            sum(abs(norm[i] - norm[i - 1]) for i in range(1, len(norm)))
+            / max(1, len(norm) - 1)
+        )
+        zcr.append(
+            sum(
+                1
+                for i in range(1, len(norm))
+                if (norm[i] >= 0.0) != (norm[i - 1] >= 0.0)
+            )
+            / len(norm)
+        )
+        lagdiff.append(
+            sum(abs(norm[i] - norm[i - lag]) for i in range(lag, len(norm)))
+            / max(1, len(norm) - lag)
+        )
+
+    if len(energy) < 16:
+        return ""
+
+    def zscore(arr: List[float]) -> List[float]:
+        mean = sum(arr) / len(arr)
+        var = sum((x - mean) * (x - mean) for x in arr) / len(arr)
+        std = math.sqrt(var) + 1e-9
+        return [(x - mean) / std for x in arr]
+
+    features = [zscore(energy), zscore(diff1), zscore(zcr), zscore(lagdiff)]
+    bits: List[str] = []
+    for feat in features:
+        for i in range(len(feat) - 1):
+            bits.append("1" if feat[i + 1] > feat[i] else "0")
+    return "".join(bits)
+
+
+def hamming_distance_ratio(a: str, b: str) -> float:
+    n = min(len(a), len(b))
+    if n == 0:
+        return 1.0
+    diff = sum(1 for i in range(n) if a[i] != b[i])
+    return diff / n
+
+
 @dataclass(frozen=True)
 class FileInfo:
     path: Path
     ext: str
     format_group: str
     artist: str
+    primary_artist: str
     title: str
     title_key: str
     album: str
     isrc: str
+    composer_key: str
     lang_marker: str
     edition_marker: str
     duration_s: Optional[float]
@@ -275,6 +506,9 @@ class FileInfo:
     sample_rate: Optional[int]
     bit_depth: Optional[int]
     flac_audio_md5: str  # "MD5 of the unencoded content" if present else ""
+    m4a_stream_md5: str
+    m4a_audio_md5: str
+    m4a_perceptual: str
 
     @property
     def pri(self) -> int:
@@ -299,10 +533,17 @@ class FileInfo:
 
         meta = (
             f"title={self.title!r} "
+            f"ptitle={self.title_key!r} "
             f"fmt={self.format_group} "
+            f"artist={self.artist!r} "
+            f"partist={self.primary_artist!r} "
             f"lang={self.lang_marker or 'none'} "
             f"ed={self.edition_marker or 'none'} "
             f"isrc={self.isrc or 'none'} "
+            f"composer={self.composer_key or 'none'} "
+            f"m4astream={(self.m4a_stream_md5[:8] + '…') if self.m4a_stream_md5 else 'none'} "
+            f"m4apcm={(self.m4a_audio_md5[:8] + '…') if self.m4a_audio_md5 else 'none'} "
+            f"m4aphash={(self.m4a_perceptual[:8] + '…') if self.m4a_perceptual else 'none'} "
             f"dur={self.duration_s or '?'} "
             f"pri={self.pri}"
         )
@@ -353,19 +594,29 @@ def detect_format_group(path: Path, gen: Dict[str, Any], aud: Dict[str, Any]) ->
     return "unknown"
 
 
-def extract_fileinfo(path: Path) -> FileInfo:
+def extract_fileinfo(
+    path: Path,
+    m4a_stream_md5: bool,
+    m4a_audio_md5: bool,
+    m4a_perceptual_match: bool,
+    ffmpeg_available: bool,
+) -> FileInfo:
     mi = run_mediainfo_json(path)
     tracks = get_tracks(mi)
     gen = pick_track(tracks, "General")
     aud = pick_track(tracks, "Audio")
 
-    artist = norm_space(str(gen.get("Performer") or gen.get("Album_Performer") or ""))
+    artist = norm_space(str(gen.get("Performer") or ""))
+    album_artist = norm_space(str(gen.get("Album_Performer") or ""))
+    primary_artist = primary_artist_for_dedupe(artist, album_artist)
     title = norm_space(str(gen.get("Title") or ""))
     album = norm_space(str(gen.get("Album") or ""))
+    composer = norm_space(str(gen.get("Composer") or ""))
+    composer_key = normalize_people_list(composer)
     isrc_raw = norm_space(str(gen.get("ISRC") or ""))
     isrc = normalize_isrc(isrc_raw) if isrc_raw else ""
 
-    title_key = canonicalize_title_for_matching(title)
+    title_key = title_key_for_dedupe(title)
     lang_marker = extract_language_marker(title, album)
     edition_marker = extract_edition_marker(title, album)
 
@@ -376,6 +627,9 @@ def extract_fileinfo(path: Path) -> FileInfo:
     sample_rate = None
     bit_depth = None
     flac_audio_md5 = ""
+    m4a_stream_hash = ""
+    m4a_audio_hash = ""
+    m4a_perceptual_hash = ""
 
     if ext == ".flac":
         sample_rate = parse_int(aud.get("SamplingRate") or aud.get("Sampling rate"))
@@ -390,22 +644,34 @@ def extract_fileinfo(path: Path) -> FileInfo:
                 or ""
             )
         ).upper()
+    elif ext == ".m4a" and ffmpeg_available:
+        if m4a_stream_md5:
+            m4a_stream_hash = audio_stream_md5(path)
+        if m4a_audio_md5:
+            m4a_audio_hash = decoded_audio_md5(path)
+        if m4a_perceptual_match:
+            m4a_perceptual_hash = m4a_perceptual_fingerprint(path)
 
     return FileInfo(
         path=path,
         ext=ext,
         format_group=format_group,
         artist=artist,
+        primary_artist=primary_artist,
         title=title,
         title_key=title_key,
         album=album,
         isrc=isrc,
+        composer_key=composer_key,
         lang_marker=lang_marker,
         edition_marker=edition_marker,
         duration_s=duration_s,
         sample_rate=sample_rate,
         bit_depth=bit_depth,
         flac_audio_md5=flac_audio_md5,
+        m4a_stream_md5=m4a_stream_hash,
+        m4a_audio_md5=m4a_audio_hash,
+        m4a_perceptual=m4a_perceptual_hash,
     )
 
 
@@ -532,6 +798,33 @@ def main() -> None:
         help="Duration tolerance (seconds) for tag-based matching (default: 3.0)",
     )
     ap.add_argument(
+        "--audio-match-seconds",
+        type=float,
+        default=3.0,
+        help="Duration tolerance (seconds) for audio-based near-match checks (default: 3.0).",
+    )
+    ap.add_argument(
+        "--metadata-match",
+        action="store_true",
+        help="Enable fallback matching by metadata (ISRC/title/artist). Can produce false positives.",
+    )
+    ap.add_argument(
+        "--m4a-audio-md5",
+        action="store_true",
+        help="Also hash decoded .m4a PCM for matching (slower; not strict encoded-identity).",
+    )
+    ap.add_argument(
+        "--no-m4a-perceptual-match",
+        action="store_true",
+        help="Disable perceptual audio fingerprint matching for .m4a files.",
+    )
+    ap.add_argument(
+        "--m4a-perceptual-max-distance",
+        type=float,
+        default=0.02,
+        help="Max Hamming distance ratio for .m4a perceptual fingerprint matches (default: 0.02).",
+    )
+    ap.add_argument(
         "--no-color",
         action="store_true",
         help="Disable ANSI colors",
@@ -557,17 +850,42 @@ def main() -> None:
     include_m4a = ".m4a" in exts
     split_formats = not args.no_split_formats
     effective_split = split_formats and not include_m4a
+    ffmpeg_available = shutil.which("ffmpeg") is not None
+    use_metadata_match = bool(args.metadata_match)
+    use_m4a_stream_md5 = bool(include_m4a and ffmpeg_available)
+    use_m4a_audio_md5 = bool(args.m4a_audio_md5 and include_m4a and ffmpeg_available)
+    use_m4a_perceptual = bool(
+        include_m4a and ffmpeg_available and not args.no_m4a_perceptual_match
+    )
+    audio_match_seconds = float(args.audio_match_seconds)
+    m4a_perceptual_max_distance = float(args.m4a_perceptual_max_distance)
 
     print_header(use_color, "Scan")
     print(
         f"Root: {colorize(use_color, str(root), C.BRIGHT_WHITE)}\n"
         f"Extensions: {colorize(use_color, ', '.join(sorted(exts)), C.CYAN)}\n"
         f"Mode: {colorize(use_color, 'DRY-RUN', C.BRIGHT_YELLOW) if dry_run else colorize(use_color, 'APPLY', C.BRIGHT_RED)}\n"
-        f"Tag duration tolerance: {colorize(use_color, str(args.tag_match_seconds) + 's', C.CYAN)}\n"
+        f"Match mode: {colorize(use_color, 'audio+metadata', C.BRIGHT_YELLOW) if use_metadata_match else colorize(use_color, 'audio-only', C.BRIGHT_GREEN)}\n"
+        f"Audio duration tolerance: {colorize(use_color, str(audio_match_seconds) + 's', C.CYAN)}\n"
+        f"M4A perceptual match: {colorize(use_color, 'yes', C.BRIGHT_GREEN) if use_m4a_perceptual else colorize(use_color, 'no', C.BRIGHT_YELLOW)}\n"
+        f"M4A perceptual max distance: {colorize(use_color, str(m4a_perceptual_max_distance), C.CYAN)}\n"
+        f"Tag duration tolerance: {colorize(use_color, str(args.tag_match_seconds) + 's', C.CYAN)} (metadata mode only)\n"
+        f"M4A stream MD5: {colorize(use_color, 'yes', C.BRIGHT_GREEN) if use_m4a_stream_md5 else colorize(use_color, 'no', C.BRIGHT_YELLOW)}\n"
+        f"M4A decoded-audio MD5: {colorize(use_color, 'yes', C.BRIGHT_GREEN) if use_m4a_audio_md5 else colorize(use_color, 'no', C.BRIGHT_YELLOW)}\n"
         f"Cross-format matching: {colorize(use_color, 'yes', C.BRIGHT_GREEN) if include_m4a else colorize(use_color, 'no', C.BRIGHT_YELLOW)}\n"
         f"Atmos isolated: {colorize(use_color, 'yes', C.BRIGHT_GREEN)}\n"
         f"Split formats: {colorize(use_color, 'yes', C.BRIGHT_GREEN) if effective_split else colorize(use_color, 'no', C.BRIGHT_YELLOW)}\n"
     )
+    if include_m4a and not ffmpeg_available:
+        print(
+            colorize(use_color, "[WARN]", C.BRIGHT_YELLOW),
+            "ffmpeg not found; .m4a audio hashes are unavailable.",
+        )
+    if args.m4a_audio_md5 and include_m4a and not ffmpeg_available:
+        print(
+            colorize(use_color, "[WARN]", C.BRIGHT_YELLOW),
+            "ffmpeg not found; --m4a-audio-md5 disabled.",
+        )
 
     infos: List[FileInfo] = []
     scanned = 0
@@ -575,7 +893,15 @@ def main() -> None:
         if p.suffix.lower() in exts:
             scanned += 1
             try:
-                infos.append(extract_fileinfo(p))
+                infos.append(
+                    extract_fileinfo(
+                        p,
+                        m4a_stream_md5=use_m4a_stream_md5,
+                        m4a_audio_md5=use_m4a_audio_md5,
+                        m4a_perceptual_match=use_m4a_perceptual,
+                        ffmpeg_available=ffmpeg_available,
+                    )
+                )
             except Exception as e:
                 print(
                     colorize(use_color, "[WARN]", C.BRIGHT_YELLOW),
@@ -593,80 +919,152 @@ def main() -> None:
     print()
 
     # Grouping strategy:
-    # 1) Strong: same ISRC
-    # 2) Strong: FLAC decoded-audio MD5
-    # 3) Loose: tags (artist + normalized title_key) + language+edition, refined by duration
-    # When .m4a scanning is enabled, we intentionally group across extensions and
-    # non-Atmos format folders so FLAC/AAC duplicates can be detected in one run.
+    # 1) Strong: FLAC "MD5 of unencoded content" (audio identity)
+    # 2) Strong: M4A encoded audio stream MD5 (audio identity, ignores tags/container)
+    # 3) Strong: M4A decoded PCM MD5 (optional)
+    # 4) Near:  M4A perceptual fingerprint (duration + Hamming threshold)
+    # 5) Optional fallback: metadata-based grouping (ISRC + tags)
 
     strong: Dict[Tuple, List[FileInfo]] = {}
     for fi in infos:
         scope = dedupe_scope(fi, include_m4a, split_formats)
-        if fi.isrc:
-            k = (
-                "audio" if include_m4a else fi.ext,
-                scope,
-                "isrc",
-                fi.isrc,
-            )
-            strong.setdefault(k, []).append(fi)
-
-    for fi in infos:
-        scope = dedupe_scope(fi, include_m4a, split_formats)
         if fi.ext == ".flac" and fi.flac_audio_md5:
             k = (
-                "audio" if include_m4a else fi.ext,
+                fi.ext,
                 scope,
                 "flac-md5",
                 fi.flac_audio_md5,
             )
             strong.setdefault(k, []).append(fi)
 
-    loose: Dict[Tuple, List[FileInfo]] = {}
     for fi in infos:
         scope = dedupe_scope(fi, include_m4a, split_formats)
-        if fi.artist and fi.title_key:
+        if fi.ext == ".m4a" and fi.m4a_stream_md5:
             k = (
-                "audio" if include_m4a else fi.ext,
+                fi.ext,
                 scope,
-                "tags",
-                fi.lang_marker,
-                fi.edition_marker,
-                norm_text(fi.artist),
-                fi.title_key,
+                "m4a-stream-md5",
+                fi.m4a_stream_md5,
             )
-            loose.setdefault(k, []).append(fi)
+            strong.setdefault(k, []).append(fi)
 
-    tol = float(args.tag_match_seconds)
+    for fi in infos:
+        scope = dedupe_scope(fi, include_m4a, split_formats)
+        if fi.ext == ".m4a" and fi.m4a_audio_md5:
+            k = (
+                fi.ext,
+                scope,
+                "m4a-pcm-md5",
+                fi.m4a_audio_md5,
+            )
+            strong.setdefault(k, []).append(fi)
 
     candidate_groups: List[List[FileInfo]] = []
     for _, g in strong.items():
         if len(g) > 1:
             candidate_groups.append(g)
 
-    for _, bucket in loose.items():
-        if len(bucket) < 2:
-            continue
-        bucket_sorted = sorted(bucket, key=lambda x: x.duration_s or 0.0)
-        cluster: List[FileInfo] = []
-        for fi in bucket_sorted:
-            if not cluster:
-                cluster = [fi]
+    if use_m4a_perceptual:
+        m4a_buckets: Dict[str, List[FileInfo]] = {}
+        for fi in infos:
+            if fi.ext != ".m4a" or not fi.m4a_perceptual:
                 continue
-            prev = cluster[-1]
-            if fi.duration_s is None or prev.duration_s is None:
-                if len(cluster) > 1:
-                    candidate_groups.append(cluster)
-                cluster = [fi]
+            scope = dedupe_scope(fi, include_m4a, split_formats)
+            m4a_buckets.setdefault(scope, []).append(fi)
+
+        for _, bucket in m4a_buckets.items():
+            if len(bucket) < 2:
                 continue
-            if abs(fi.duration_s - prev.duration_s) <= tol:
-                cluster.append(fi)
-            else:
-                if len(cluster) > 1:
-                    candidate_groups.append(cluster)
-                cluster = [fi]
-        if len(cluster) > 1:
-            candidate_groups.append(cluster)
+
+            parent = list(range(len(bucket)))
+
+            def find(i: int) -> int:
+                while parent[i] != i:
+                    parent[i] = parent[parent[i]]
+                    i = parent[i]
+                return i
+
+            def union(i: int, j: int) -> None:
+                ri, rj = find(i), find(j)
+                if ri != rj:
+                    parent[rj] = ri
+
+            for i in range(len(bucket)):
+                for j in range(i + 1, len(bucket)):
+                    a = bucket[i]
+                    b = bucket[j]
+                    if a.duration_s is None or b.duration_s is None:
+                        continue
+                    if abs(a.duration_s - b.duration_s) > audio_match_seconds:
+                        continue
+                    dist = hamming_distance_ratio(a.m4a_perceptual, b.m4a_perceptual)
+                    if dist <= m4a_perceptual_max_distance:
+                        union(i, j)
+
+            comp: Dict[int, List[FileInfo]] = {}
+            for i, fi in enumerate(bucket):
+                comp.setdefault(find(i), []).append(fi)
+            for group in comp.values():
+                if len(group) > 1:
+                    candidate_groups.append(group)
+
+    if use_metadata_match:
+        metadata_strong: Dict[Tuple, List[FileInfo]] = {}
+        for fi in infos:
+            scope = dedupe_scope(fi, include_m4a, split_formats)
+            if fi.isrc:
+                k = (
+                    "audio" if include_m4a else fi.ext,
+                    scope,
+                    "isrc",
+                    fi.isrc,
+                )
+                metadata_strong.setdefault(k, []).append(fi)
+
+        loose: Dict[Tuple, List[FileInfo]] = {}
+        for fi in infos:
+            scope = dedupe_scope(fi, include_m4a, split_formats)
+            dedupe_artist = fi.primary_artist or fi.artist
+            if dedupe_artist and fi.title_key:
+                k = (
+                    "audio" if include_m4a else fi.ext,
+                    scope,
+                    "tags",
+                    fi.lang_marker,
+                    fi.edition_marker,
+                    norm_text(dedupe_artist),
+                    fi.title_key,
+                )
+                loose.setdefault(k, []).append(fi)
+
+        for _, g in metadata_strong.items():
+            if len(g) > 1:
+                candidate_groups.append(g)
+
+        tol = float(args.tag_match_seconds)
+        for _, bucket in loose.items():
+            if len(bucket) < 2:
+                continue
+            bucket_sorted = sorted(bucket, key=lambda x: x.duration_s or 0.0)
+            cluster: List[FileInfo] = []
+            for fi in bucket_sorted:
+                if not cluster:
+                    cluster = [fi]
+                    continue
+                prev = cluster[-1]
+                if fi.duration_s is None or prev.duration_s is None:
+                    if len(cluster) > 1:
+                        candidate_groups.append(cluster)
+                    cluster = [fi]
+                    continue
+                if abs(fi.duration_s - prev.duration_s) <= tol:
+                    cluster.append(fi)
+                else:
+                    if len(cluster) > 1:
+                        candidate_groups.append(cluster)
+                    cluster = [fi]
+            if len(cluster) > 1:
+                candidate_groups.append(cluster)
 
     seen_sets = set()
     groups: List[List[FileInfo]] = []
