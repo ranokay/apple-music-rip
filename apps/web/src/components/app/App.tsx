@@ -126,6 +126,16 @@ function isNearBottom(container: HTMLDivElement | null) {
 	);
 }
 
+function formatWrapperLog(line: string) {
+	if (line.toLowerCase().includes("error") || line.toLowerCase().includes("fail"))
+		return "text-rose-600 dark:text-rose-400";
+	if (line.toLowerCase().includes("warn"))
+		return "text-amber-600 dark:text-amber-400";
+	if (line.toLowerCase().includes("ready") || line.toLowerCase().includes("started"))
+		return "text-emerald-600 dark:text-emerald-400";
+	return "text-slate-700 dark:text-slate-300";
+}
+
 function formatDownloaderLog(line: string) {
 	if (line.includes("✅") || line.includes("completed successfully"))
 		return "text-emerald-600 dark:text-emerald-400";
@@ -164,6 +174,7 @@ export default function App() {
 	const [downloadRunning, setDownloadRunning] = useState(false);
 	const [verbose, setVerbose] = useState(true);
 	const [downloaderLogs, setDownloaderLogs] = useState<string[]>([]);
+	const [wrapperLogs, setWrapperLogs] = useState<string[]>([]);
 	const [previewData, setPreviewData] = useState<PreviewData | null>(null);
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [trackFilter, setTrackFilter] = useState("");
@@ -214,6 +225,7 @@ export default function App() {
 	);
 
 	const downloaderRef = useRef<HTMLDivElement | null>(null);
+	const wrapperRef = useRef<HTMLDivElement | null>(null);
 
 	const filteredDownloaderLogs = useMemo(() => {
 		if (verbose) return downloaderLogs;
@@ -310,8 +322,10 @@ export default function App() {
 				const data = await fetchJson<LogsPayload>("/api/get-logs");
 				if (!mounted) return;
 				const shouldScrollDownloader = isNearBottom(downloaderRef.current);
+				const shouldScrollWrapper = isNearBottom(wrapperRef.current);
 
 				setDownloaderLogs(data.downloader ?? []);
+				setWrapperLogs(data.wrapper ?? []);
 				setWrapperRunning(data.wrapper_running);
 				setDownloadRunning(data.download_running);
 
@@ -319,6 +333,10 @@ export default function App() {
 					if (shouldScrollDownloader && downloaderRef.current) {
 						downloaderRef.current.scrollTop =
 							downloaderRef.current.scrollHeight;
+					}
+					if (shouldScrollWrapper && wrapperRef.current) {
+						wrapperRef.current.scrollTop =
+							wrapperRef.current.scrollHeight;
 					}
 				});
 			} catch {
